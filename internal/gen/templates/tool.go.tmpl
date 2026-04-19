@@ -1,0 +1,105 @@
+{{define "tool.go.tmpl"}}
+	{{.QMCPAddTool}}(srv.SDK(), &{{.QMCPTool}}{
+		Name: {{printf "%q" .ToolName}},
+{{- if .Title}}
+		Title: {{printf "%q" .Title}},
+{{- end}}
+{{- if .Description}}
+		Description: {{printf "%q" .Description}},
+{{- end}}
+		InputSchema:  {{.InputSchemaVar}},
+		OutputSchema: {{.OutputSchemaVar}},
+{{- if .AnnotationsLiteral}}
+		Annotations: {{.AnnotationsLiteral}},
+{{- end}}
+	}, func(ctx {{.QContext}}, req *{{.QMCPCallReq}}, raw {{.QJSONRaw}}) (*{{.QMCPCallResult}}, any, error) {
+		var in {{.InputTypeRef}}
+		if err := {{.QProtojsonUnm}}(raw, &in); err != nil {
+			return srv.FinishCall(ctx, req, nil, {{.QFmtErrorf}}("invalid arguments: %w", err))
+		}
+		// protojson unmarshaled whatever the client sent, including any
+		// fields marked google.api.field_behavior = OUTPUT_ONLY — which
+		// the advertised schema hides but the wire format does not
+		// enforce. Clear them so the upstream gRPC server never sees
+		// client-supplied values for server-computed fields.
+		{{.QProtomcpClearOutputOnly}}(&in)
+		// Middleware receives &in via GRPCRequest.Input and may either
+		// mutate its fields in place (type-assert or proto-reflect) or
+		// replace the pointer entirely with another message of the same
+		// concrete type. The final handler always reads from g.Input so
+		// both forms propagate to the upstream call.
+		g := &{{.QProtomcpGRPCReq}}{Input: &in, Metadata: {{.QMetadataMD}}{}}
+{{if .IsServerStreaming}}
+		final := func(ctx {{.QContext}}, req *{{.QMCPCallReq}}, g *{{.QProtomcpGRPCReq}}) (*{{.QMCPCallResult}}, error) {
+			ctx = {{.QMetadataNewOut}}(ctx, g.Metadata)
+			upstream, ok := g.Input.(*{{.InputTypeRef}})
+			if !ok {
+				return nil, {{.QFmtErrorf}}("GRPCRequest.Input: want *%s, got %T", "{{.InputTypeRef}}", g.Input)
+			}
+			stream, err := {{.ClientMethod}}(ctx, upstream)
+			if err != nil {
+				return nil, err
+			}
+			var last {{.QJSONRaw}}
+			var count int
+			for {
+				msg, rErr := stream.Recv()
+				if {{.QErrorsIs}}(rErr, {{.QIOEOF}}) {
+					break
+				}
+				if rErr != nil {
+					return nil, rErr
+				}
+				payload, mErr := {{.QProtojsonM}}(msg)
+				if mErr != nil {
+					return nil, mErr
+				}
+				last = {{.QJSONRaw}}(payload)
+				count++
+				// Progress counter is monotonic per MCP spec; payload rides in Message.
+				// If the caller disconnected, NotifyProgress errors; fall out of
+				// the loop via ctx.Err() instead of silently burning upstream
+				// messages. req.Session is guarded because a future SDK change
+				// or test harness may leave it nil.
+				if token := req.Params.GetProgressToken(); token != nil && req.Session != nil {
+					if nErr := req.Session.NotifyProgress(ctx, &{{.QMCPProgressParams}}{
+						ProgressToken: token,
+						Progress:      float64(count),
+						Message:       string(payload),
+					}); nErr != nil {
+						if cErr := ctx.Err(); cErr != nil {
+							return nil, cErr
+						}
+					}
+				}
+			}
+			return &{{.QMCPCallResult}}{
+				Content:           []{{.QMCPContent}}{&{{.QMCPTextContent}}{Text: {{.QFmtSprintf}}("%d messages; last: %s", count, string(last))}},
+				StructuredContent: last,
+			}, nil
+		}
+{{else}}
+		final := func(ctx {{.QContext}}, _ *{{.QMCPCallReq}}, g *{{.QProtomcpGRPCReq}}) (*{{.QMCPCallResult}}, error) {
+			ctx = {{.QMetadataNewOut}}(ctx, g.Metadata)
+			upstream, ok := g.Input.(*{{.InputTypeRef}})
+			if !ok {
+				return nil, {{.QFmtErrorf}}("GRPCRequest.Input: want *%s, got %T", "{{.InputTypeRef}}", g.Input)
+			}
+			resp, err := {{.ClientMethod}}(ctx, upstream)
+			if err != nil {
+				return nil, err
+			}
+			outBytes, err := {{.QProtojsonM}}(resp)
+			if err != nil {
+				return nil, err
+			}
+			return &{{.QMCPCallResult}}{
+				Content:           []{{.QMCPContent}}{&{{.QMCPTextContent}}{Text: string(outBytes)}},
+				StructuredContent: {{.QJSONRaw}}(outBytes),
+			}, nil
+		}
+{{end}}
+		result, err := srv.Chain(final)(ctx, req, g)
+		return srv.FinishCall(ctx, req, result, err)
+	})
+{{end}}
