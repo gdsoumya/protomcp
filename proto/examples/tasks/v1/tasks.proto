@@ -1,0 +1,117 @@
+syntax = "proto3";
+
+package protomcp.examples.tasks.v1;
+
+import "google/api/field_behavior.proto";
+import "google/protobuf/timestamp.proto";
+import "protomcp/v1/annotations.proto";
+
+option go_package = "github.com/gdsoumya/protomcp/pkg/api/gen/examples/tasks/v1;tasksv1";
+
+// Tasks is a CRUD gRPC service used to demonstrate protomcp's handling of
+// MCP tool hint annotations (read_only, idempotent, destructive) and the
+// OUTPUT_ONLY field-behavior stripping on input schemas.
+//
+// Clients see CRUD tools whose input schemas hide server-computed fields
+// (id, timestamps) while still receiving them in responses; the LLM
+// client can use read_only / idempotent / destructive hints to decide
+// how aggressively to retry or confirm an action.
+service Tasks {
+  // ListTasks returns every task the server knows about. Read-only; safe
+  // for an LLM to call speculatively.
+  rpc ListTasks(ListTasksRequest) returns (ListTasksResponse) {
+    option (protomcp.v1.tool) = {
+      title: "List Tasks"
+      description: "Returns every task stored on the server."
+      read_only: true
+    };
+  }
+
+  // GetTask returns a single task by id. Read-only.
+  rpc GetTask(GetTaskRequest) returns (Task) {
+    option (protomcp.v1.tool) = {
+      title: "Get Task"
+      description: "Returns the task with the given id, or NOT_FOUND."
+      read_only: true
+    };
+  }
+
+  // CreateTask inserts a new task and assigns its server-computed fields.
+  // Not idempotent — calling twice creates two tasks.
+  rpc CreateTask(CreateTaskRequest) returns (Task) {
+    option (protomcp.v1.tool) = {
+      title: "Create Task"
+      description: "Creates a new task. Server assigns id and timestamps."
+    };
+  }
+
+  // UpdateTask replaces a task's mutable fields by id. Idempotent — applying
+  // the same update twice leaves the task in the same state.
+  rpc UpdateTask(UpdateTaskRequest) returns (Task) {
+    option (protomcp.v1.tool) = {
+      title: "Update Task"
+      description: "Updates a task's title / description / done. Idempotent."
+      idempotent: true
+    };
+  }
+
+  // DeleteTask removes a task by id. Destructive (removes data) and
+  // idempotent (deleting an already-missing id still succeeds).
+  rpc DeleteTask(DeleteTaskRequest) returns (DeleteTaskResponse) {
+    option (protomcp.v1.tool) = {
+      title: "Delete Task"
+      description: "Removes a task by id. Safe to retry; returns existed=true if a task was actually removed."
+      idempotent: true
+      destructive: true
+    };
+  }
+}
+
+// Task is the CRUD resource. id and the timestamps are OUTPUT_ONLY:
+// the input schema for Create / Update omits them, and the server fills
+// them in on write. They are still present on the response.
+message Task {
+  string id = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+  string title = 2 [(google.api.field_behavior) = REQUIRED];
+  string description = 3;
+  bool done = 4;
+  google.protobuf.Timestamp created_at = 5 [(google.api.field_behavior) = OUTPUT_ONLY];
+  google.protobuf.Timestamp updated_at = 6 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+message ListTasksRequest {}
+
+message ListTasksResponse {
+  repeated Task tasks = 1;
+}
+
+message GetTaskRequest {
+  string id = 1 [(google.api.field_behavior) = REQUIRED];
+}
+
+message CreateTaskRequest {
+  // task.id and task.{created,updated}_at are OUTPUT_ONLY on Task and
+  // are therefore stripped from this request's advertised input schema.
+  Task task = 1 [(google.api.field_behavior) = REQUIRED];
+}
+
+// UpdateTaskRequest models the writable fields flat — we cannot reuse
+// Task here because Task.id is OUTPUT_ONLY (stripped from input schemas),
+// and an update with no id cannot identify the task to mutate.
+message UpdateTaskRequest {
+  string id          = 1 [(google.api.field_behavior) = REQUIRED];
+  string title       = 2 [(google.api.field_behavior) = REQUIRED];
+  string description = 3;
+  bool   done        = 4;
+}
+
+message DeleteTaskRequest {
+  string id = 1 [(google.api.field_behavior) = REQUIRED];
+}
+
+message DeleteTaskResponse {
+  // existed is true when a task with the given id was actually removed;
+  // false means the id did not exist (still a successful response — the
+  // operation is idempotent).
+  bool existed = 1;
+}
