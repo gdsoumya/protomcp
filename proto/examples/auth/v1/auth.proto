@@ -1,0 +1,90 @@
+syntax = "proto3";
+
+package protomcp.examples.auth.v1;
+
+import "google/api/field_behavior.proto";
+import "protomcp/v1/annotations.proto";
+
+option go_package = "github.com/gdsoumya/protomcp/pkg/api/gen/examples/auth/v1;authv1";
+
+// Profile is the canonical acceptance-test service for protomcp's
+// HTTP-middleware → gRPC-metadata propagation seam.
+service Profile {
+  // WhoAmI echoes back the caller identity that was propagated via gRPC
+  // metadata. An authenticating middleware on the MCP side writes
+  // x-user-id / x-tenant into the outgoing metadata; the gRPC server
+  // reads them via metadata.FromIncomingContext and returns them.
+  rpc WhoAmI(WhoAmIRequest) returns (WhoAmIResponse) {
+    option (protomcp.v1.tool) = {
+      title: "Who Am I"
+      description: "Returns the caller identity propagated from HTTP middleware."
+      read_only: true
+    };
+  }
+}
+
+message WhoAmIRequest {}
+
+message WhoAmIResponse {
+  string user_id = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+  string tenant  = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// ---------------------------------------------------------------------
+// Test-only shapes. These messages are NOT exposed by the Profile
+// service; they exist so the protomcp.ClearOutputOnly runtime helper
+// can be exercised against every shape that wire-format OUTPUT_ONLY
+// can take (nested / repeated / map / message-level / oneof). Removing
+// them breaks pkg/protomcp/fieldbehavior_test.go.
+// ---------------------------------------------------------------------
+
+// TestInner is a leaf with a mix of OUTPUT_ONLY and regular fields so
+// tests can assert the former gets cleared and the latter survives.
+message TestInner {
+  string server_id = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+  string user_name = 2;
+}
+
+// TestNested holds a non-OUTPUT_ONLY field of message type. The outer
+// field must survive ClearOutputOnly, but the inner OUTPUT_ONLY field
+// must be cleared — proving recursion works.
+message TestNested {
+  TestInner inner = 1;
+}
+
+// TestOutputOnlyMessage has a whole OUTPUT_ONLY message field. The
+// entire message value must be cleared; we never need to recurse into
+// an already-cleared branch.
+message TestOutputOnlyMessage {
+  TestInner stripped = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+  string    kept     = 2;
+}
+
+// TestRepeatedMessages holds a repeated<Message>. Each element must be
+// recursively cleared.
+message TestRepeatedMessages {
+  repeated TestInner items = 1;
+}
+
+// TestMapMessages holds a map<string, Message>. Each map value must be
+// recursively cleared.
+message TestMapMessages {
+  map<string, TestInner> items = 1;
+}
+
+// TestOneofOutputOnly mixes a regular oneof member and an OUTPUT_ONLY
+// oneof member. If the OUTPUT_ONLY member is selected, the oneof must
+// be cleared; if the regular member is selected, it must survive.
+message TestOneofOutputOnly {
+  oneof choice {
+    string manual   = 1;
+    string computed = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+  }
+}
+
+// TestRepeatedOutputOnlyScalar exercises OUTPUT_ONLY on a repeated
+// scalar field — the whole list must be cleared.
+message TestRepeatedOutputOnlyScalar {
+  repeated string server_ids = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+  repeated string names      = 2;
+}
