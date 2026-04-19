@@ -1,0 +1,63 @@
+name: Bug report
+description: Something is broken, generates incorrect output, or misbehaves at runtime.
+title: "bug: <short summary>"
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. The more specific you are, the faster this gets fixed.
+        Before filing, please check that the problem reproduces with the latest `main` of both `protomcp` and `modelcontextprotocol/go-sdk`.
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: What happened
+      description: What did you observe? What did you expect?
+      placeholder: |
+        I ran `buf generate` on a proto with … and the generated file …
+        I expected … but got …
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Minimal reproducer
+      description: Paste a minimal `.proto` + the command you ran. A public repo link also works.
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: versions
+    attributes:
+      label: Versions
+      description: |
+        Run these and paste the output:
+        ```
+        go version
+        protoc-gen-mcp -version 2>/dev/null || go list -m github.com/gdsoumya/protomcp
+        go list -m github.com/modelcontextprotocol/go-sdk
+        buf --version 2>/dev/null || echo "not using buf"
+        ```
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: generated-output
+    attributes:
+      label: Generated output or error (if applicable)
+      description: Paste the relevant chunk of the generated `*.mcp.pb.go`, the `protoc` error, or the runtime stack trace.
+      render: go
+
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: Pre-flight
+      options:
+        - label: I searched existing issues (open and closed) and this does not duplicate one.
+          required: true
+        - label: I reproduced this with the latest published or `main`-branch version.
+          required: true

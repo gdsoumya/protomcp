@@ -1,0 +1,48 @@
+name: Feature request
+description: Propose a new annotation, runtime hook, or generator capability.
+title: "feat: <short summary>"
+labels: ["enhancement", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Feature proposals land fastest when they're grounded in a concrete user problem and respect the design principles in [`CONTRIBUTING.md`](../CONTRIBUTING.md) and [`AGENTS.md`](../AGENTS.md) — especially: we stay thin over the official SDK, we do not hand-roll MCP protocol work, and default-deny rendering stays default-deny.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem are you trying to solve?
+      description: Describe the real use case. Avoid framing as "add X"; frame as "I need to do Y and today I can't because …".
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed shape
+      description: A sketch is fine — proto annotation, Go API, generator flag, whatever. Include the user-facing surface.
+      render: go
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you considered
+      description: Why doesn't an existing knob (middleware, result processor, error handler, field_behavior, buf.validate) cover it?
+
+  - type: textarea
+    id: compat
+    attributes:
+      label: Compatibility
+      description: Is this additive? Does it change generator output for existing protos? Does it require a new annotation field number?
+
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: Pre-flight
+      options:
+        - label: I searched existing issues and discussions.
+          required: true
+        - label: I read the design principles in CONTRIBUTING.md.
+          required: true
