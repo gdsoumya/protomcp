@@ -1,0 +1,31 @@
+syntax = "proto3";
+
+package protomcp.testdata.decorations.v1;
+
+import "google/api/field_behavior.proto";
+
+option go_package = "github.com/gdsoumya/protomcp/internal/gen/schema/testdata;testdatav1";
+
+// Documented exercises field-level JSON Schema decorations that require
+// descriptor source information: per-field description from leading proto
+// comments, and the `[deprecated = true]` marker.
+message Documented {
+  // The user's display name.
+  string name = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Primary contact email. Must be verifiable.
+  string email = 2;
+
+  // Deprecated. Carried for backwards compatibility with v0 clients.
+  string legacy_id = 3 [deprecated = true];
+
+  // Free-form tags.
+  repeated string tags = 4;
+
+  // Auxiliary contact payload.
+  ContactInfo contact_info = 5;
+}
+
+message ContactInfo {
+  string phone = 1;
+}

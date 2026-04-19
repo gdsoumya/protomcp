@@ -1,0 +1,18 @@
+version: v2
+inputs:
+  - directory: .
+managed:
+  enabled: true
+  disable:
+    - file_option: go_package_prefix
+      module: buf.build/bufbuild/protovalidate
+    - file_option: go_package_prefix
+      module: buf.build/googleapis/googleapis
+  override:
+    - file_option: go_package_prefix
+      value: github.com/gdsoumya/protomcp/internal/gen/schema/testdata
+plugins:
+  - local: protoc-gen-go
+    out: .
+    opt:
+      - paths=source_relative
