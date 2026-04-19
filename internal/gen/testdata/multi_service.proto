@@ -1,0 +1,34 @@
+syntax = "proto3";
+
+package protomcp.gen.testdata.multiservice.v1;
+
+import "protomcp/v1/annotations.proto";
+
+option go_package = "github.com/gdsoumya/protomcp/internal/gen/testdata/multi;multiv1";
+
+// Alpha is the first of two services in this file. It ensures the generator
+// emits one RegisterXxxMCPTools function per service in a multi-service
+// proto.
+service Alpha {
+  // Ping is a unary annotated method.
+  rpc Ping(Msg) returns (Msg) {
+    option (protomcp.v1.tool) = {};
+  }
+}
+
+// Beta is the second service. It also contains an unannotated bidi-streaming
+// RPC which the generator silently ignores. (Annotated bidi-streaming is a
+// hard error — see bad_bidi.proto.)
+service Beta {
+  // Echo is a unary annotated method.
+  rpc Echo(Msg) returns (Msg) {
+    option (protomcp.v1.tool) = {};
+  }
+
+  // Duplex is bidi-streaming and unannotated; the generator ignores it.
+  rpc Duplex(stream Msg) returns (stream Msg);
+}
+
+message Msg {
+  string text = 1;
+}

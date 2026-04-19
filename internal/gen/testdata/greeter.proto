@@ -1,0 +1,49 @@
+syntax = "proto3";
+
+package protomcp.gen.testdata.greeter.v1;
+
+import "protomcp/v1/annotations.proto";
+
+option go_package = "github.com/gdsoumya/protomcp/internal/gen/testdata/greeter;greeterv1";
+
+// Greeter is a minimal fixture used by the protoc-gen-mcp generator tests.
+// It contains one unary, one server-streaming, one unannotated unary, and
+// two unannotated streaming RPCs so the generator's handling of each shape
+// can be asserted in isolation. Annotated client/bidi streaming is tested
+// separately in bad_streams.proto — those are expected to fail generation.
+service Greeter {
+  // Greets a caller by name. (Unary; annotated; read-only.)
+  rpc SayHello(HelloRequest) returns (HelloReply) {
+    option (protomcp.v1.tool) = {
+      title: "Say Hello"
+      read_only: true
+    };
+  }
+
+  // Streams a sequence of greetings, one per call tick. (Server-streaming; annotated.)
+  rpc StreamGreetings(HelloRequest) returns (stream HelloReply) {
+    option (protomcp.v1.tool) = {
+      title: "Stream Greetings"
+      read_only: true
+    };
+  }
+
+  // Internal is used to verify that unannotated RPCs are not exposed.
+  rpc Internal(HelloRequest) returns (HelloReply);
+
+  // BatchGreet is unannotated — client-streaming RPCs have no MCP mapping,
+  // so the generator silently ignores them. Annotated client-streaming is a
+  // hard error (see bad_streams.proto).
+  rpc BatchGreet(stream HelloRequest) returns (HelloReply);
+
+  // Chat is unannotated — bidi-streaming RPCs have no MCP mapping either.
+  rpc Chat(stream HelloRequest) returns (stream HelloReply);
+}
+
+message HelloRequest {
+  string name = 1;
+}
+
+message HelloReply {
+  string message = 1;
+}

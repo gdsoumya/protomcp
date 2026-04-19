@@ -1,0 +1,23 @@
+syntax = "proto3";
+
+// bad_streams.proto exercises the generator's client-streaming hard-error path.
+// Annotating a client-streaming RPC with protomcp.v1.tool is illegal — it
+// has no MCP mapping — and the generator must reject it with a clear message.
+//
+// Go types for this proto are intentionally NOT committed — tests drive
+// the generator directly against the FileDescriptorSet and assert failure,
+// so there's nothing to import at test time.
+package protomcp.gen.testdata.badstreams.v1;
+
+import "protomcp/v1/annotations.proto";
+
+option go_package = "github.com/gdsoumya/protomcp/internal/gen/testdata/badstreams;badstreamsv1";
+
+service BadClient {
+  rpc Push(stream Packet) returns (Ack) {
+    option (protomcp.v1.tool) = { title: "Push" };
+  }
+}
+
+message Packet { bytes data = 1; }
+message Ack    { bool ok = 1; }

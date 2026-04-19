@@ -1,0 +1,83 @@
+syntax = "proto3";
+
+package protomcp.gen.testdata.optionsvariety.v1;
+
+import "protomcp/v1/annotations.proto";
+
+option go_package = "github.com/gdsoumya/protomcp/internal/gen/testdata/options;optionsv1";
+
+// Prefixed is a fixture that exercises service-level tool_prefix, explicit
+// tool name overrides, every combination of the {read_only, idempotent,
+// destructive} hint fields, description override vs. leading-comment
+// fallback, and server-streaming with an explicit stream_mode.
+service Prefixed {
+  option (protomcp.v1.service) = { tool_prefix: "ns_" };
+
+  // ReadOnlyOnly exercises only the read_only hint.
+  rpc ReadOnlyOnly(Empty) returns (Empty) {
+    option (protomcp.v1.tool) = {
+      read_only: true
+    };
+  }
+
+  // IdempotentOnly exercises only the idempotent hint.
+  rpc IdempotentOnly(Empty) returns (Empty) {
+    option (protomcp.v1.tool) = {
+      idempotent: true
+    };
+  }
+
+  // DestructiveOnly exercises only the destructive hint.
+  rpc DestructiveOnly(Empty) returns (Empty) {
+    option (protomcp.v1.tool) = {
+      destructive: true
+    };
+  }
+
+  // AllHints sets every hint flag.
+  rpc AllHints(Empty) returns (Empty) {
+    option (protomcp.v1.tool) = {
+      read_only: true
+      idempotent: true
+      destructive: true
+    };
+  }
+
+  // NoHints leaves every hint flag unset. The generator must emit no
+  // Annotations struct at all for this method.
+  rpc NoHints(Empty) returns (Empty) {
+    option (protomcp.v1.tool) = {};
+  }
+
+  // Renamed has an explicit tool name override. Because the service has a
+  // tool_prefix, the final name must be "ns_custom.name.value" so the
+  // override is preserved verbatim on top of the prefix.
+  rpc Renamed(Empty) returns (Empty) {
+    option (protomcp.v1.tool) = {
+      name: "custom.name.value"
+    };
+  }
+
+  // DescOverridden carries an explicit description that must be emitted
+  // verbatim, ignoring this leading comment.
+  rpc DescOverridden(Empty) returns (Empty) {
+    option (protomcp.v1.tool) = {
+      description: "explicit description wins"
+    };
+  }
+
+  // DescFallback has no description override. The generator must fall back
+  // to this leading proto comment.
+  rpc DescFallback(Empty) returns (Empty) {
+    option (protomcp.v1.tool) = {};
+  }
+
+  // ProgressStream is a server-streaming RPC. The generator must emit the
+  // streaming template (NotifyProgress loop) for it. PROGRESS mode is the
+  // only supported shape — it is implicit and non-configurable.
+  rpc ProgressStream(Empty) returns (stream Empty) {
+    option (protomcp.v1.tool) = {};
+  }
+}
+
+message Empty {}

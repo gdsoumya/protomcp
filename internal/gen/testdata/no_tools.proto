@@ -1,0 +1,13 @@
+syntax = "proto3";
+
+package protomcp.gen.testdata.notools.v1;
+
+option go_package = "github.com/gdsoumya/protomcp/internal/gen/testdata/notools;notoolsv1";
+
+// Silent is a fixture with no annotated methods. The generator must emit no
+// *.mcp.pb.go file for this proto at all.
+service Silent {
+  rpc DoThing(Blank) returns (Blank);
+}
+
+message Blank {}
