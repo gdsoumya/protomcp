@@ -1,0 +1,120 @@
+syntax = "proto3";
+
+package protomcp.examples.greeter.v1;
+
+import "google/api/field_behavior.proto";
+import "protomcp/v1/annotations.proto";
+
+option go_package = "github.com/gdsoumya/protomcp/examples/greeter/gen;greeterv1";
+
+// Greeter is a tiny gRPC service that exists only to exercise protoc-gen-mcp
+// end-to-end: one annotated unary RPC, one annotated server-streaming RPC,
+// and one unannotated RPC that must NOT be exposed over MCP.
+service Greeter {
+  // SayHello greets a caller by name.
+  rpc SayHello(HelloRequest) returns (HelloReply) {
+    option (protomcp.v1.tool) = {
+      title: "Say Hello"
+      description: "Greets a caller by name."
+      read_only: true
+    };
+  }
+
+  // StreamGreetings emits N greetings, one per server-streamed message.
+  // Each message arrives as an MCP progress notification; the final
+  // tool result summarizes the run.
+  rpc StreamGreetings(StreamGreetingsRequest) returns (stream HelloReply) {
+    option (protomcp.v1.tool) = {
+      title: "Stream Greetings"
+      description: "Emits a greeting for each turn, one per progress notification."
+      read_only: true
+    };
+  }
+
+  // FailWith is an error-injection RPC used only by the E2E tests to
+  // exercise the DefaultErrorHandler mapping. It returns a gRPC status
+  // error whose code is picked from the request.
+  rpc FailWith(FailWithRequest) returns (HelloReply) {
+    option (protomcp.v1.tool) = {
+      title: "Fail With Code"
+      description: "Returns a gRPC status error with the requested code."
+    };
+  }
+
+  // EchoComplex exercises nested, repeated, and enum field round-tripping
+  // through protojson. The server echoes the request back inside the
+  // response so the test can assert structural preservation.
+  rpc EchoComplex(EchoComplexRequest) returns (EchoComplexResponse) {
+    option (protomcp.v1.tool) = {
+      title: "Echo Complex"
+      description: "Echoes a structured request to verify protojson round-trip fidelity."
+      read_only: true
+    };
+  }
+
+  // Slow blocks until its context is cancelled, so callers can verify
+  // context cancellation propagates through the SDK into the server.
+  // Returns DeadlineExceeded / Canceled based on ctx.Err().
+  rpc Slow(HelloRequest) returns (HelloReply) {
+    option (protomcp.v1.tool) = {
+      title: "Slow"
+      description: "Blocks until ctx is cancelled; for testing cancellation propagation."
+    };
+  }
+
+  // Internal is intentionally unannotated — it must not be generated.
+  rpc Internal(HelloRequest) returns (HelloReply);
+}
+
+// FailWithRequest selects which gRPC status code the server should emit.
+message FailWithRequest {
+  // Numeric gRPC status code (see google.golang.org/grpc/codes). 0 (OK)
+  // returns a normal HelloReply instead of an error.
+  int32  code    = 1 [(google.api.field_behavior) = REQUIRED];
+  string message = 2;
+}
+
+// Mood is an enum used by EchoComplex to verify enum round-tripping.
+enum Mood {
+  MOOD_UNSPECIFIED = 0;
+  MOOD_HAPPY       = 1;
+  MOOD_SAD         = 2;
+  MOOD_EXCITED     = 3;
+}
+
+// Address is a nested message used by EchoComplex to verify nested
+// message round-tripping.
+message Address {
+  string street = 1;
+  string city   = 2;
+  string zip    = 3;
+}
+
+message EchoComplexRequest {
+  string            name      = 1 [(google.api.field_behavior) = REQUIRED];
+  repeated string   tags      = 2;
+  Mood              mood      = 3;
+  Address           address   = 4;
+  map<string, int32> counters = 5;
+}
+
+message EchoComplexResponse {
+  string            name      = 1;
+  repeated string   tags      = 2;
+  Mood              mood      = 3;
+  Address           address   = 4;
+  map<string, int32> counters = 5;
+}
+
+message HelloRequest {
+  string name = 1 [(google.api.field_behavior) = REQUIRED];
+}
+
+message HelloReply {
+  string message = 1;
+}
+
+message StreamGreetingsRequest {
+  string name = 1 [(google.api.field_behavior) = REQUIRED];
+  int32  turns = 2;
+}
