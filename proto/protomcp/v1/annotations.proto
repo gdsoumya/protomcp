@@ -1,0 +1,52 @@
+syntax = "proto3";
+
+package protomcp.v1;
+
+import "google/protobuf/descriptor.proto";
+
+option go_package = "github.com/gdsoumya/protomcp/pkg/api/gen/protomcp/v1;protomcpv1";
+
+// Method-level MCP tool options. Presence of this option on an RPC method is
+// what opts the method in to MCP tool generation — unannotated methods are
+// never exposed.
+extend google.protobuf.MethodOptions {
+  ToolOptions tool = 50001;
+}
+
+// Service-level MCP options. Applied to every annotated method on the service.
+extend google.protobuf.ServiceOptions {
+  ServiceOptions service = 50002;
+}
+
+// ToolOptions controls how a single RPC method is surfaced as an MCP tool.
+// Every field is optional. The mere presence of this option opts the method in.
+message ToolOptions {
+  // Tool name override. When unset the generator derives the name from the
+  // service and method names (dots and slashes sanitized). If the enclosing
+  // service has a tool_prefix set, it is prepended to either value.
+  string name = 1;
+
+  // Human-readable title shown by MCP clients.
+  string title = 2;
+
+  // Tool description shown to LLM clients. Overrides the method's leading
+  // proto comment when set.
+  string description = 3;
+
+  // Tool hints surfaced on the MCP Tool.Annotations payload. They let clients
+  // make safer UX choices (e.g., auto-approve read-only calls, warn on
+  // destructive ones). Matching MCP spec semantics.
+  bool read_only   = 4;
+  bool idempotent  = 5;
+  bool destructive = 6;
+}
+
+// ServiceOptions applies to every annotated method on the service.
+message ServiceOptions {
+  // Prefix prepended verbatim to every generated tool name on this service.
+  // Include your desired separator in the prefix string itself, e.g.
+  // tool_prefix: "greeter_" turns "SayHello" into "greeter_SayHello";
+  // tool_prefix: "ns.v1." turns it into "ns.v1.SayHello". The prefix is
+  // applied after the per-method name override.
+  string tool_prefix = 1;
+}
