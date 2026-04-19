@@ -1,0 +1,44 @@
+# Compiled plugin binaries (the Makefile's `build` target writes here).
+/bin/
+
+# Go build artifacts.
+*.test
+*.exe
+*.dll
+*.so
+
+# Example binaries, if users run `go build ./examples/.../cmd/<name>` from
+# the repo root — Go writes the binary to the cwd with the leaf name.
+# Matches the current set of runnable cmd/ leaves; extend when adding more.
+/auth
+/errorhandler
+/greeter
+/mutator
+/redactor
+/sdkauth
+/sdkopts
+/streaming
+/protoc-gen-mcp
+
+# Coverage output.
+*.out
+*.cov
+coverage.*
+profile.*
+
+# Vendored dependencies (the project uses modules; no vendor/).
+/vendor/
+
+# Go module cache dumps (from `go mod download -x` etc.).
+*.tmp
+
+# Editor and IDE state.
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS cruft.
+.DS_Store
+Thumbs.db
