@@ -1,0 +1,142 @@
+# golangci-lint v2 configuration for protomcp.
+
+version: "2"
+
+run:
+  timeout: 5m
+  allow-parallel-runners: true
+
+linters:
+  default: none
+  enable:
+    - bodyclose       # net/http resp.Body.Close() hygiene
+    - copyloopvar     # Go 1.22 for-loop variable capture semantics
+    - dupl            # duplicate code (tuned for the generator's repetitive rule mapping)
+    - errcheck        # unchecked error returns
+    - errorlint       # errors.Is / %w / type-assertion correctness
+    - gocognit        # cognitive complexity (generous threshold)
+    - goconst         # repeated string literals that should be constants
+    - gocritic        # misc style + correctness
+    - gocyclo         # cyclomatic complexity (generous threshold)
+    - godot           # end-of-sentence periods on doc comments
+    - gosec           # security (relaxed for tests)
+    - govet
+    - ineffassign
+    - intrange        # Go 1.22 range-over-int
+    - misspell
+    - nakedret        # naked returns in longer funcs
+    - nilerr          # `return nil` after `err != nil`
+    - noctx           # http.Request without context
+    - nolintlint      # malformed / stale nolint directives
+    - predeclared     # shadowing of builtins (new, len, etc.)
+    - revive          # stylistic linter (replaces golint)
+    - staticcheck     # absorbs gosimple + stylecheck in v2
+    - unconvert       # redundant type conversions
+    - unparam         # unused function parameters
+    - unused
+    - whitespace
+
+  settings:
+    errcheck:
+      check-type-assertions: true
+    gocognit:
+      min-complexity: 30
+    goconst:
+      min-len: 4
+      min-occurrences: 4
+    gocyclo:
+      min-complexity: 20
+    govet:
+      enable-all: true
+      disable:
+        - fieldalignment  # prioritise readability over struct-field packing
+    misspell:
+      locale: US
+    nakedret:
+      max-func-lines: 30
+    revive:
+      rules:
+        - name: blank-imports
+        - name: context-as-argument
+        - name: context-keys-type
+        - name: dot-imports
+        - name: empty-block
+        - name: error-naming
+        - name: error-return
+        - name: error-strings
+        - name: errorf
+        - name: exported
+          arguments:
+            - disableStutteringCheck  # protomcp.GRPCRequest is fine despite the "GRPC" prefix
+        - name: if-return
+        - name: increment-decrement
+        - name: indent-error-flow
+        - name: package-comments
+        - name: range
+        - name: receiver-naming
+        - name: redefines-builtin-id
+        - name: superfluous-else
+        - name: time-naming
+        - name: unexported-return
+        - name: unreachable-code
+        - name: unused-parameter
+          disabled: true    # context.Context-first funcs often ignore ctx intentionally
+        - name: var-declaration
+        - name: var-naming
+
+  exclusions:
+    generated: strict
+    presets:
+      - comments
+      - std-error-handling
+
+    paths:
+      # Generated protobuf code.
+      - "pkg/api/gen"
+      # Proto fixtures used by generator / schema tests.
+      - "internal/gen/testdata"
+      - "internal/gen/schema/testdata"
+
+    rules:
+      # Tests are allowed to be noisier: long functions, unchecked closes on
+      # deferred cleanup, duplication across table-driven cases, repeated
+      # string literals (e.g. JSON Schema type names), wrapped errs.
+      - path: _test\.go
+        linters:
+          - bodyclose
+          - dupl
+          - errcheck
+          - errorlint
+          - goconst
+          - gocognit
+          - gocyclo
+          - gosec
+          - unparam
+      # The generator's schema builder has inherently long switch blocks over
+      # proto Kinds and well-known types. Cyclomatic/cognitive limits there
+      # produce noise without adding value.
+      - path: internal/gen/schema/schema.go
+        linters:
+          - gocognit
+          - gocyclo
+          - gocritic
+      # Generator core walks files / services / methods, naturally deep.
+      - path: internal/gen/generator.go
+        linters:
+          - gocognit
+          - gocyclo
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/gdsoumya/protomcp
+  exclusions:
+    generated: strict
+    paths:
+      - "pkg/api/gen"
+      - "internal/gen/testdata"
+      - "internal/gen/schema/testdata"
