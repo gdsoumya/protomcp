@@ -1,0 +1,44 @@
+version: v2
+modules:
+  # The published module: just the annotation schema. Rooted at proto/ so
+  # the generated file's import path is protomcp/v1/annotations.proto
+  # (what consumers type after `import "…"`). excludes keeps the examples
+  # out of what ships to BSR.
+  - path: proto
+    name: buf.build/gdsoumya/protomcp
+    excludes:
+      - proto/examples
+  # Local-only workspace module for the example services. Rooted at the
+  # same proto/ (critical so the generated output lands at
+  # pkg/api/gen/examples/…/v1/), with the complementary exclude so the
+  # two modules never overlap. No `name` field means buf push --exclude-unnamed
+  # skips this module at publish time — see CONTRIBUTING.md.
+  - path: proto
+    excludes:
+      - proto/protomcp
+    # Examples use pedagogical names (HelloRequest, Greeter, …) and the
+    # package directories don't match the proto package, both of which
+    # violate STANDARD. Relax those sub-rules here only.
+    lint:
+      use:
+        - STANDARD
+      except:
+        - PACKAGE_VERSION_SUFFIX
+        - PACKAGE_DIRECTORY_MATCH
+        - SERVICE_SUFFIX
+        - RPC_REQUEST_STANDARD_NAME
+        - RPC_RESPONSE_STANDARD_NAME
+        - RPC_REQUEST_RESPONSE_UNIQUE
+deps:
+  - buf.build/googleapis/googleapis
+# Top-level lint applies to every module that doesn't override — here,
+# only the published annotations module. Kept strict to protect the API
+# surface.
+lint:
+  use:
+    - STANDARD
+  except:
+    - PACKAGE_VERSION_SUFFIX
+breaking:
+  use:
+    - FILE

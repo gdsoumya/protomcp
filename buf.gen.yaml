@@ -1,0 +1,24 @@
+version: v2
+inputs:
+  - directory: proto
+managed:
+  enabled: true
+  disable:
+    - file_option: go_package_prefix
+      module: buf.build/googleapis/googleapis
+  override:
+    - file_option: go_package_prefix
+      value: github.com/gdsoumya/protomcp/pkg/api/gen
+plugins:
+  - local: protoc-gen-go
+    out: pkg/api/gen
+    opt:
+      - paths=source_relative
+  - local: protoc-gen-go-grpc
+    out: pkg/api/gen
+    opt:
+      - paths=source_relative
+  - local: protoc-gen-mcp
+    out: pkg/api/gen
+    opt:
+      - paths=source_relative
