@@ -51,9 +51,24 @@ func startGRPC(t *testing.T) tasksv1.TasksClient {
 }
 
 // connect wires an in-memory MCP client to srv and returns the session.
+// The client is configured with an ElicitationHandler that auto-accepts ,
+// the CRUD tests want to exercise the full round-trip and are not the
+// place to assert elicitation behavior. Tests that need a different
+// handler (e.g. decline) call connectWith directly.
 func connect(ctx context.Context, t *testing.T, srv *protomcp.Server) *mcp.ClientSession {
 	t.Helper()
-	client := mcp.NewClient(&mcp.Implementation{Name: "test-client", Version: "0.0.1"}, nil)
+	return connectWith(ctx, t, srv, &mcp.ClientOptions{
+		ElicitationHandler: acceptElicitation,
+	})
+}
+
+// connectWith is the general-purpose variant of connect, letting tests
+// supply custom client options, most importantly, an ElicitationHandler
+// that returns a specific action. The server side is identical; only the
+// client's behavior differs between tests.
+func connectWith(ctx context.Context, t *testing.T, srv *protomcp.Server, opts *mcp.ClientOptions) *mcp.ClientSession {
+	t.Helper()
+	client := mcp.NewClient(&mcp.Implementation{Name: "test-client", Version: "0.0.1"}, opts)
 	cT, sT := mcp.NewInMemoryTransports()
 	ss, err := srv.SDK().Connect(ctx, sT, nil)
 	if err != nil {
@@ -66,6 +81,13 @@ func connect(ctx context.Context, t *testing.T, srv *protomcp.Server) *mcp.Clien
 	}
 	t.Cleanup(func() { _ = cs.Close() })
 	return cs
+}
+
+// acceptElicitation is the default ElicitationHandler our CRUD tests use.
+// Returning action=accept makes the handler a no-op from the caller's
+// perspective: the gated tool runs as if the gate were never there.
+func acceptElicitation(_ context.Context, _ *mcp.ElicitRequest) (*mcp.ElicitResult, error) {
+	return &mcp.ElicitResult{Action: "accept"}, nil
 }
 
 // newServer builds a protomcp.Server with the Tasks tools registered and
@@ -158,7 +180,7 @@ func TestToolsListHints(t *testing.T) {
 	}
 }
 
-// TestInputSchemaStripsOutputOnly — the advertised input schema must hide
+// TestInputSchemaStripsOutputOnly, the advertised input schema must hide
 // the OUTPUT_ONLY fields on Task (id, createdAt, updatedAt). This is the
 // contract CreateTask relies on: a well-behaved client cannot supply
 // server-computed values through the schema. (The runtime also scrubs
@@ -223,7 +245,7 @@ func TestCRUDRoundTrip(t *testing.T) {
 			created.CreatedAt, created.UpdatedAt)
 	}
 
-	// List — must contain the created task.
+	// List, must contain the created task.
 	var listed tasksv1.ListTasksResponse
 	callTool(ctx, t, cs, "Tasks_ListTasks", `{}`, &listed)
 	if len(listed.Tasks) != 1 || listed.Tasks[0].Id != created.Id {
@@ -238,7 +260,7 @@ func TestCRUDRoundTrip(t *testing.T) {
 		t.Errorf("Get: got %+v, want title='buy milk' id=%s", &got, created.Id)
 	}
 
-	// Update — flip done to true; title must stay set (REQUIRED).
+	// Update, flip done to true; title must stay set (REQUIRED).
 	// UpdateTaskRequest uses flat fields (not an embedded Task) because
 	// Task.id is OUTPUT_ONLY and would be stripped from the input schema.
 	var updated tasksv1.Task
@@ -251,7 +273,7 @@ func TestCRUDRoundTrip(t *testing.T) {
 		t.Errorf("Update: id changed: %s -> %s", created.Id, updated.Id)
 	}
 
-	// Delete — first call returns existed=true.
+	// Delete, first call returns existed=true.
 	var del1 tasksv1.DeleteTaskResponse
 	callTool(ctx, t, cs, "Tasks_DeleteTask",
 		fmt.Sprintf(`{"id":%q}`, created.Id), &del1)
@@ -259,7 +281,7 @@ func TestCRUDRoundTrip(t *testing.T) {
 		t.Errorf("Delete (first): Existed = false, want true")
 	}
 
-	// Delete idempotent — second call still succeeds, but existed=false.
+	// Delete idempotent, second call still succeeds, but existed=false.
 	var del2 tasksv1.DeleteTaskResponse
 	callTool(ctx, t, cs, "Tasks_DeleteTask",
 		fmt.Sprintf(`{"id":%q}`, created.Id), &del2)
@@ -268,7 +290,7 @@ func TestCRUDRoundTrip(t *testing.T) {
 	}
 }
 
-// TestCreateIgnoresClientSuppliedOutputOnly — if a client bypasses the
+// TestCreateIgnoresClientSuppliedOutputOnly, if a client bypasses the
 // advertised input schema and sends id / createdAt directly, the runtime
 // must clear them before the upstream gRPC server sees them. This is the
 // defense-in-depth guarantee protomcp.ClearOutputOnly provides.
@@ -289,7 +311,7 @@ func TestCreateIgnoresClientSuppliedOutputOnly(t *testing.T) {
 	}`, &created)
 
 	if created.Id == "client-forged-id" {
-		t.Errorf("Create used client-supplied id — OUTPUT_ONLY stripping failed")
+		t.Errorf("Create used client-supplied id, OUTPUT_ONLY stripping failed")
 	}
 	if created.CreatedAt != nil && created.CreatedAt.Seconds == 0 {
 		t.Errorf("Create used client-supplied createdAt (unix 0); got %v", created.CreatedAt)

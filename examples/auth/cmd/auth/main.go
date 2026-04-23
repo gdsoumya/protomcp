@@ -3,11 +3,11 @@
 //
 //   - Layer 1: a stdlib http.Handler middleware validates a bearer
 //     token against a hardcoded map and stashes the principal on ctx.
-//   - Layer 2: a protomcp.Middleware reads the principal from ctx and
+//   - Layer 2: a protomcp.ToolMiddleware reads the principal from ctx and
 //     writes x-user-id / x-tenant into the outgoing gRPC metadata.
 //
 // The upstream gRPC server's own PrincipalInterceptor reads those
-// metadata keys back out — zero MCP-awareness on the gRPC side.
+// metadata keys back out, zero MCP-awareness on the gRPC side.
 //
 // Try it:
 //
@@ -73,10 +73,10 @@ func run(ctx context.Context, addr string) error {
 	}
 	defer shutdownGRPC()
 
-	// Layer 2: protomcp.Middleware propagates the ctx principal as
+	// Layer 2: protomcp.ToolMiddleware propagates the ctx principal as
 	// outgoing gRPC metadata so the server's interceptor can read it.
 	srv := protomcp.New("auth-mcp", "0.1.0",
-		protomcp.WithMiddleware(principalToMetadata()),
+		protomcp.WithToolMiddleware(principalToMetadata()),
 	)
 	authv1.RegisterProfileMCPTools(srv, grpcClient)
 
@@ -122,9 +122,9 @@ func httpAuth(next http.Handler) http.Handler {
 	})
 }
 
-func principalToMetadata() protomcp.Middleware {
-	return func(next protomcp.Handler) protomcp.Handler {
-		return func(ctx context.Context, req *mcp.CallToolRequest, g *protomcp.GRPCRequest) (*mcp.CallToolResult, error) {
+func principalToMetadata() protomcp.ToolMiddleware {
+	return func(next protomcp.ToolHandler) protomcp.ToolHandler {
+		return func(ctx context.Context, req *mcp.CallToolRequest, g *protomcp.GRPCData) (*mcp.CallToolResult, error) {
 			p, ok := ctx.Value(principalKey{}).(principal)
 			if !ok {
 				return nil, fmt.Errorf("principal missing on ctx")

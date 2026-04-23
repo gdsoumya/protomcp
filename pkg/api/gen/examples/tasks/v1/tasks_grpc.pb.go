@@ -19,40 +19,80 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	Tasks_ListTasks_FullMethodName  = "/protomcp.examples.tasks.v1.Tasks/ListTasks"
-	Tasks_GetTask_FullMethodName    = "/protomcp.examples.tasks.v1.Tasks/GetTask"
-	Tasks_CreateTask_FullMethodName = "/protomcp.examples.tasks.v1.Tasks/CreateTask"
-	Tasks_UpdateTask_FullMethodName = "/protomcp.examples.tasks.v1.Tasks/UpdateTask"
-	Tasks_DeleteTask_FullMethodName = "/protomcp.examples.tasks.v1.Tasks/DeleteTask"
+	Tasks_ListTasks_FullMethodName            = "/protomcp.examples.tasks.v1.Tasks/ListTasks"
+	Tasks_GetTask_FullMethodName              = "/protomcp.examples.tasks.v1.Tasks/GetTask"
+	Tasks_GetTag_FullMethodName               = "/protomcp.examples.tasks.v1.Tasks/GetTag"
+	Tasks_CreateTask_FullMethodName           = "/protomcp.examples.tasks.v1.Tasks/CreateTask"
+	Tasks_UpdateTask_FullMethodName           = "/protomcp.examples.tasks.v1.Tasks/UpdateTask"
+	Tasks_DeleteTask_FullMethodName           = "/protomcp.examples.tasks.v1.Tasks/DeleteTask"
+	Tasks_ListAllResources_FullMethodName     = "/protomcp.examples.tasks.v1.Tasks/ListAllResources"
+	Tasks_WatchResourceChanges_FullMethodName = "/protomcp.examples.tasks.v1.Tasks/WatchResourceChanges"
+	Tasks_TaskReview_FullMethodName           = "/protomcp.examples.tasks.v1.Tasks/TaskReview"
 )
 
 // TasksClient is the client API for Tasks service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
-// Tasks is a CRUD gRPC service used to demonstrate protomcp's handling of
-// MCP tool hint annotations (read_only, idempotent, destructive) and the
-// OUTPUT_ONLY field-behavior stripping on input schemas.
+// Tasks is a CRUD gRPC service used to demonstrate protomcp's handling
+// of MCP tool hint annotations (read_only, idempotent, destructive),
+// OUTPUT_ONLY field-behavior stripping on input schemas, resource
+// templates for two distinct resource types (tasks://{id} and
+// tags://{id}), and a single `resource_list` RPC that enumerates both
+// types through a templated URI scheme.
 //
-// Clients see CRUD tools whose input schemas hide server-computed fields
-// (id, timestamps) while still receiving them in responses; the LLM
-// client can use read_only / idempotent / destructive hints to decide
-// how aggressively to retry or confirm an action.
+// Clients see CRUD tools whose input schemas hide server-computed
+// fields (id, timestamps) while still receiving them in responses; the
+// LLM client can use read_only / idempotent / destructive hints to
+// decide how aggressively to retry or confirm an action.
 type TasksClient interface {
-	// ListTasks returns every task the server knows about. Read-only; safe
-	// for an LLM to call speculatively.
+	// ListTasks returns every task the server knows about. Read-only;
+	// safe for an LLM to call speculatively. Exposed only as a tool ,
+	// the flat `resources/list` surface is served by ListAllResources
+	// below, which covers both tasks and tags in one paginated stream.
 	ListTasks(ctx context.Context, in *ListTasksRequest, opts ...grpc.CallOption) (*ListTasksResponse, error)
 	// GetTask returns a single task by id. Read-only.
 	GetTask(ctx context.Context, in *GetTaskRequest, opts ...grpc.CallOption) (*Task, error)
+	// GetTag returns a single tag by id. Exposed only as a resource
+	// template, no CRUD tool, because tags are auxiliary: the value is
+	// in being able to attach `tags://<id>` as chat context, not in
+	// manipulating them through the LLM.
+	GetTag(ctx context.Context, in *GetTagRequest, opts ...grpc.CallOption) (*Tag, error)
 	// CreateTask inserts a new task and assigns its server-computed fields.
-	// Not idempotent — calling twice creates two tasks.
+	// Not idempotent, calling twice creates two tasks.
 	CreateTask(ctx context.Context, in *CreateTaskRequest, opts ...grpc.CallOption) (*Task, error)
-	// UpdateTask replaces a task's mutable fields by id. Idempotent — applying
+	// UpdateTask replaces a task's mutable fields by id. Idempotent, applying
 	// the same update twice leaves the task in the same state.
 	UpdateTask(ctx context.Context, in *UpdateTaskRequest, opts ...grpc.CallOption) (*Task, error)
 	// DeleteTask removes a task by id. Destructive (removes data) and
-	// idempotent (deleting an already-missing id still succeeds).
+	// idempotent (deleting an already-missing id still succeeds). Gated on
+	// an MCP elicitation so clients surface a confirmation dialog before
+	// the upstream gRPC call runs, the confirmation prompt echoes the
+	// task id back via a Mustache template over the request message.
 	DeleteTask(ctx context.Context, in *DeleteTaskRequest, opts ...grpc.CallOption) (*DeleteTaskResponse, error)
+	// ListAllResources is the single `resources/list` endpoint. It
+	// enumerates every task and every tag as individual resources in
+	// one paginated stream; the URI template `{type}://{id}` binds the
+	// scheme from each item's type field, yielding `tasks://<id>` for
+	// tasks and `tags://<id>` for tags. This is the idiomatic way to
+	// serve a multi-type `resources/list`, protomcp permits at most
+	// one `resource_list` annotation, so consolidation happens on the
+	// gRPC side.
+	ListAllResources(ctx context.Context, in *ListAllResourcesRequest, opts ...grpc.CallOption) (*ListAllResourcesResponse, error)
+	// WatchResourceChanges is a server-streaming feed that fires once
+	// per CRUD mutation (create/update/delete of a task or tag). The
+	// stream never closes on its own; protomcp's generated watcher
+	// reconnects on error. Each received message is a bare "something
+	// changed" signal, content is intentionally empty. Subscribers to
+	// `notifications/resources/list_changed` on the MCP side receive
+	// one notification per debounce window (10ms) regardless of how
+	// many backend events landed in that window.
+	WatchResourceChanges(ctx context.Context, in *WatchResourceChangesRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[WatchResourceChangesEvent], error)
+	// TaskReview surfaces a single task as an MCP prompt. It simply loads
+	// the task by id (reusing GetTask semantics) and renders a Mustache
+	// template against the response, producing one user-role PromptMessage
+	// the LLM client can use to kick off a review conversation.
+	TaskReview(ctx context.Context, in *TaskReviewRequest, opts ...grpc.CallOption) (*Task, error)
 }
 
 type tasksClient struct {
@@ -77,6 +117,16 @@ func (c *tasksClient) GetTask(ctx context.Context, in *GetTaskRequest, opts ...g
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(Task)
 	err := c.cc.Invoke(ctx, Tasks_GetTask_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *tasksClient) GetTag(ctx context.Context, in *GetTagRequest, opts ...grpc.CallOption) (*Tag, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Tag)
+	err := c.cc.Invoke(ctx, Tasks_GetTag_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -113,33 +163,108 @@ func (c *tasksClient) DeleteTask(ctx context.Context, in *DeleteTaskRequest, opt
 	return out, nil
 }
 
+func (c *tasksClient) ListAllResources(ctx context.Context, in *ListAllResourcesRequest, opts ...grpc.CallOption) (*ListAllResourcesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListAllResourcesResponse)
+	err := c.cc.Invoke(ctx, Tasks_ListAllResources_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *tasksClient) WatchResourceChanges(ctx context.Context, in *WatchResourceChangesRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[WatchResourceChangesEvent], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &Tasks_ServiceDesc.Streams[0], Tasks_WatchResourceChanges_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[WatchResourceChangesRequest, WatchResourceChangesEvent]{ClientStream: stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type Tasks_WatchResourceChangesClient = grpc.ServerStreamingClient[WatchResourceChangesEvent]
+
+func (c *tasksClient) TaskReview(ctx context.Context, in *TaskReviewRequest, opts ...grpc.CallOption) (*Task, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Task)
+	err := c.cc.Invoke(ctx, Tasks_TaskReview_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // TasksServer is the server API for Tasks service.
 // All implementations must embed UnimplementedTasksServer
 // for forward compatibility.
 //
-// Tasks is a CRUD gRPC service used to demonstrate protomcp's handling of
-// MCP tool hint annotations (read_only, idempotent, destructive) and the
-// OUTPUT_ONLY field-behavior stripping on input schemas.
+// Tasks is a CRUD gRPC service used to demonstrate protomcp's handling
+// of MCP tool hint annotations (read_only, idempotent, destructive),
+// OUTPUT_ONLY field-behavior stripping on input schemas, resource
+// templates for two distinct resource types (tasks://{id} and
+// tags://{id}), and a single `resource_list` RPC that enumerates both
+// types through a templated URI scheme.
 //
-// Clients see CRUD tools whose input schemas hide server-computed fields
-// (id, timestamps) while still receiving them in responses; the LLM
-// client can use read_only / idempotent / destructive hints to decide
-// how aggressively to retry or confirm an action.
+// Clients see CRUD tools whose input schemas hide server-computed
+// fields (id, timestamps) while still receiving them in responses; the
+// LLM client can use read_only / idempotent / destructive hints to
+// decide how aggressively to retry or confirm an action.
 type TasksServer interface {
-	// ListTasks returns every task the server knows about. Read-only; safe
-	// for an LLM to call speculatively.
+	// ListTasks returns every task the server knows about. Read-only;
+	// safe for an LLM to call speculatively. Exposed only as a tool ,
+	// the flat `resources/list` surface is served by ListAllResources
+	// below, which covers both tasks and tags in one paginated stream.
 	ListTasks(context.Context, *ListTasksRequest) (*ListTasksResponse, error)
 	// GetTask returns a single task by id. Read-only.
 	GetTask(context.Context, *GetTaskRequest) (*Task, error)
+	// GetTag returns a single tag by id. Exposed only as a resource
+	// template, no CRUD tool, because tags are auxiliary: the value is
+	// in being able to attach `tags://<id>` as chat context, not in
+	// manipulating them through the LLM.
+	GetTag(context.Context, *GetTagRequest) (*Tag, error)
 	// CreateTask inserts a new task and assigns its server-computed fields.
-	// Not idempotent — calling twice creates two tasks.
+	// Not idempotent, calling twice creates two tasks.
 	CreateTask(context.Context, *CreateTaskRequest) (*Task, error)
-	// UpdateTask replaces a task's mutable fields by id. Idempotent — applying
+	// UpdateTask replaces a task's mutable fields by id. Idempotent, applying
 	// the same update twice leaves the task in the same state.
 	UpdateTask(context.Context, *UpdateTaskRequest) (*Task, error)
 	// DeleteTask removes a task by id. Destructive (removes data) and
-	// idempotent (deleting an already-missing id still succeeds).
+	// idempotent (deleting an already-missing id still succeeds). Gated on
+	// an MCP elicitation so clients surface a confirmation dialog before
+	// the upstream gRPC call runs, the confirmation prompt echoes the
+	// task id back via a Mustache template over the request message.
 	DeleteTask(context.Context, *DeleteTaskRequest) (*DeleteTaskResponse, error)
+	// ListAllResources is the single `resources/list` endpoint. It
+	// enumerates every task and every tag as individual resources in
+	// one paginated stream; the URI template `{type}://{id}` binds the
+	// scheme from each item's type field, yielding `tasks://<id>` for
+	// tasks and `tags://<id>` for tags. This is the idiomatic way to
+	// serve a multi-type `resources/list`, protomcp permits at most
+	// one `resource_list` annotation, so consolidation happens on the
+	// gRPC side.
+	ListAllResources(context.Context, *ListAllResourcesRequest) (*ListAllResourcesResponse, error)
+	// WatchResourceChanges is a server-streaming feed that fires once
+	// per CRUD mutation (create/update/delete of a task or tag). The
+	// stream never closes on its own; protomcp's generated watcher
+	// reconnects on error. Each received message is a bare "something
+	// changed" signal, content is intentionally empty. Subscribers to
+	// `notifications/resources/list_changed` on the MCP side receive
+	// one notification per debounce window (10ms) regardless of how
+	// many backend events landed in that window.
+	WatchResourceChanges(*WatchResourceChangesRequest, grpc.ServerStreamingServer[WatchResourceChangesEvent]) error
+	// TaskReview surfaces a single task as an MCP prompt. It simply loads
+	// the task by id (reusing GetTask semantics) and renders a Mustache
+	// template against the response, producing one user-role PromptMessage
+	// the LLM client can use to kick off a review conversation.
+	TaskReview(context.Context, *TaskReviewRequest) (*Task, error)
 	mustEmbedUnimplementedTasksServer()
 }
 
@@ -156,6 +281,9 @@ func (UnimplementedTasksServer) ListTasks(context.Context, *ListTasksRequest) (*
 func (UnimplementedTasksServer) GetTask(context.Context, *GetTaskRequest) (*Task, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetTask not implemented")
 }
+func (UnimplementedTasksServer) GetTag(context.Context, *GetTagRequest) (*Tag, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetTag not implemented")
+}
 func (UnimplementedTasksServer) CreateTask(context.Context, *CreateTaskRequest) (*Task, error) {
 	return nil, status.Error(codes.Unimplemented, "method CreateTask not implemented")
 }
@@ -164,6 +292,15 @@ func (UnimplementedTasksServer) UpdateTask(context.Context, *UpdateTaskRequest) 
 }
 func (UnimplementedTasksServer) DeleteTask(context.Context, *DeleteTaskRequest) (*DeleteTaskResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method DeleteTask not implemented")
+}
+func (UnimplementedTasksServer) ListAllResources(context.Context, *ListAllResourcesRequest) (*ListAllResourcesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListAllResources not implemented")
+}
+func (UnimplementedTasksServer) WatchResourceChanges(*WatchResourceChangesRequest, grpc.ServerStreamingServer[WatchResourceChangesEvent]) error {
+	return status.Error(codes.Unimplemented, "method WatchResourceChanges not implemented")
+}
+func (UnimplementedTasksServer) TaskReview(context.Context, *TaskReviewRequest) (*Task, error) {
+	return nil, status.Error(codes.Unimplemented, "method TaskReview not implemented")
 }
 func (UnimplementedTasksServer) mustEmbedUnimplementedTasksServer() {}
 func (UnimplementedTasksServer) testEmbeddedByValue()               {}
@@ -222,6 +359,24 @@ func _Tasks_GetTask_Handler(srv interface{}, ctx context.Context, dec func(inter
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Tasks_GetTag_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetTagRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(TasksServer).GetTag(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Tasks_GetTag_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(TasksServer).GetTag(ctx, req.(*GetTagRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _Tasks_CreateTask_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(CreateTaskRequest)
 	if err := dec(in); err != nil {
@@ -276,6 +431,53 @@ func _Tasks_DeleteTask_Handler(srv interface{}, ctx context.Context, dec func(in
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Tasks_ListAllResources_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListAllResourcesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(TasksServer).ListAllResources(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Tasks_ListAllResources_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(TasksServer).ListAllResources(ctx, req.(*ListAllResourcesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Tasks_WatchResourceChanges_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(WatchResourceChangesRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(TasksServer).WatchResourceChanges(m, &grpc.GenericServerStream[WatchResourceChangesRequest, WatchResourceChangesEvent]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type Tasks_WatchResourceChangesServer = grpc.ServerStreamingServer[WatchResourceChangesEvent]
+
+func _Tasks_TaskReview_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(TaskReviewRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(TasksServer).TaskReview(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Tasks_TaskReview_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(TasksServer).TaskReview(ctx, req.(*TaskReviewRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Tasks_ServiceDesc is the grpc.ServiceDesc for Tasks service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -292,6 +494,10 @@ var Tasks_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _Tasks_GetTask_Handler,
 		},
 		{
+			MethodName: "GetTag",
+			Handler:    _Tasks_GetTag_Handler,
+		},
+		{
 			MethodName: "CreateTask",
 			Handler:    _Tasks_CreateTask_Handler,
 		},
@@ -303,7 +509,21 @@ var Tasks_ServiceDesc = grpc.ServiceDesc{
 			MethodName: "DeleteTask",
 			Handler:    _Tasks_DeleteTask_Handler,
 		},
+		{
+			MethodName: "ListAllResources",
+			Handler:    _Tasks_ListAllResources_Handler,
+		},
+		{
+			MethodName: "TaskReview",
+			Handler:    _Tasks_TaskReview_Handler,
+		},
 	},
-	Streams:  []grpc.StreamDesc{},
+	Streams: []grpc.StreamDesc{
+		{
+			StreamName:    "WatchResourceChanges",
+			Handler:       _Tasks_WatchResourceChanges_Handler,
+			ServerStreams: true,
+		},
+	},
 	Metadata: "examples/tasks/v1/tasks.proto",
 }

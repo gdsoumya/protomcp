@@ -62,7 +62,7 @@ service Greeter {
     };
   }
 
-  // Internal is intentionally unannotated — it must not be generated.
+  // Internal is intentionally unannotated, it must not be generated.
   rpc Internal(HelloRequest) returns (HelloReply);
 }
 

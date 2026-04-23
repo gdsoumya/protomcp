@@ -1,6 +1,6 @@
 // Command mutator runs the protomcp greeter example with a Middleware
 // that rewrites the HelloRequest.Name field before the upstream gRPC
-// call. This demonstrates GRPCRequest.Input — mutations persist because
+// call. This demonstrates GRPCData.Input, mutations persist because
 // Input is the same pointer the generated handler forwards.
 //
 // Invoke Greeter_SayHello with {"name":"alice"} and the upstream gRPC
@@ -43,16 +43,16 @@ func main() {
 	}
 }
 
-// prefixName is a protomcp.Middleware that rewrites HelloRequest.Name.
+// prefixName is a protomcp.ToolMiddleware that rewrites HelloRequest.Name.
 // The type-assertion path is what most code should use; for generic
 // handling across many message types, proto reflection works too, e.g.
 //
 //	m := g.Input.ProtoReflect()
 //	fd := m.Descriptor().Fields().ByName("name")
 //	m.Set(fd, protoreflect.ValueOfString(prefix+"-"+m.Get(fd).String()))
-func prefixName(prefix string) protomcp.Middleware {
-	return func(next protomcp.Handler) protomcp.Handler {
-		return func(ctx context.Context, req *mcp.CallToolRequest, g *protomcp.GRPCRequest) (*mcp.CallToolResult, error) {
+func prefixName(prefix string) protomcp.ToolMiddleware {
+	return func(next protomcp.ToolHandler) protomcp.ToolHandler {
+		return func(ctx context.Context, req *mcp.CallToolRequest, g *protomcp.GRPCData) (*mcp.CallToolResult, error) {
 			if r, ok := g.Input.(*greeterv1.HelloRequest); ok {
 				r.Name = prefix + "-" + r.Name
 			}
@@ -69,7 +69,7 @@ func run(ctx context.Context, addr, prefix string) error {
 	defer shutdownGRPC()
 
 	srv := protomcp.New("greeter-mutator", "0.1.0",
-		protomcp.WithMiddleware(prefixName(prefix)),
+		protomcp.WithToolMiddleware(prefixName(prefix)),
 	)
 	greeterv1.RegisterGreeterMCPTools(srv, grpcClient)
 

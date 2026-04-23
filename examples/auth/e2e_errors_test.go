@@ -14,15 +14,15 @@ import (
 )
 
 // TestAuthGRPCUnauthenticatedRoundTrip verifies that when the upstream
-// PrincipalInterceptor rejects the call with codes.Unauthenticated —
-// because no middleware wrote x-user-id into the outgoing metadata —
+// PrincipalInterceptor rejects the call with codes.Unauthenticated ,
+// because no middleware wrote x-user-id into the outgoing metadata ,
 // the MCP client observes a JSON-RPC protocol error (non-nil err from
 // CallTool) rather than an IsError result. Auth codes short-circuit to
 // the JSON-RPC layer by design; see pkg/protomcp/errors.go.
 func TestAuthGRPCUnauthenticatedRoundTrip(t *testing.T) {
 	grpcClient := startTestGRPCServer(t)
 
-	// Intentionally no middleware — the upstream interceptor sees missing
+	// Intentionally no middleware, the upstream interceptor sees missing
 	// x-user-id and rejects with Unauthenticated.
 	srv := protomcp.New("auth-example", "0.1.0")
 	authv1.RegisterProfileMCPTools(srv, grpcClient)
@@ -47,13 +47,13 @@ func TestAuthGRPCUnauthenticatedRoundTrip(t *testing.T) {
 
 // TestHTTPAuthRejectsBefore MCP verifies that the HTTP-layer
 // authentication middleware rejects unauthenticated requests with a
-// proper 401 — before the MCP SDK even sees the request. This is the
+// proper 401, before the MCP SDK even sees the request. This is the
 // behavior that the old HeadersFromContext-based design couldn't
 // express cleanly: auth failures are a transport-level concern.
 func TestHTTPAuthRejectsBeforeMCP(t *testing.T) {
 	grpcClient := startTestGRPCServer(t)
 	srv := protomcp.New("auth-example", "0.1.0",
-		protomcp.WithMiddleware(principalToMetadata()),
+		protomcp.WithToolMiddleware(principalToMetadata()),
 	)
 	authv1.RegisterProfileMCPTools(srv, grpcClient)
 

@@ -1,5 +1,5 @@
 // Package server implements the Greeter gRPC service used by the greeter example.
-// It is completely unaware of MCP — protomcp wraps it without any code changes.
+// It is completely unaware of MCP, protomcp wraps it without any code changes.
 package server
 
 import (

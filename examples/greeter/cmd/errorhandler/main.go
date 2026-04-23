@@ -45,7 +45,7 @@ func friendlyNotFound(ctx context.Context, req *mcp.CallToolRequest, err error) 
 			}},
 		}, nil
 	}
-	return protomcp.DefaultErrorHandler(ctx, req, err)
+	return protomcp.DefaultToolErrorHandler(ctx, req, err)
 }
 
 func main() {
@@ -68,7 +68,7 @@ func run(ctx context.Context, addr string) error {
 	defer shutdownGRPC()
 
 	srv := protomcp.New("greeter-errorhandler", "0.1.0",
-		protomcp.WithErrorHandler(friendlyNotFound),
+		protomcp.WithToolErrorHandler(friendlyNotFound),
 	)
 	greeterv1.RegisterGreeterMCPTools(srv, grpcClient)
 

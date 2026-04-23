@@ -63,7 +63,7 @@ func TestGRPCNotFoundRoundTrip(t *testing.T) {
 
 // TestGRPCUnauthenticatedRoundTrip verifies that a gRPC Unauthenticated
 // from upstream escalates through DefaultErrorHandler into a JSON-RPC
-// error — the SDK's CallTool returns a non-nil error and no result.
+// error, the SDK's CallTool returns a non-nil error and no result.
 func TestGRPCUnauthenticatedRoundTrip(t *testing.T) {
 	cs := buildGreeterServer(t)
 	ctx := context.Background()
@@ -86,8 +86,8 @@ func TestGRPCUnauthenticatedRoundTrip(t *testing.T) {
 
 // TestGRPCInvalidArgumentRoundTrip verifies that a gRPC InvalidArgument
 // is folded into IsError=true with TextContent carrying the "Code:
-// Message" form and — where the SDK does not clobber it with schema
-// defaults — a StructuredContent carrying the google.rpc.Status proto
+// Message" form and, where the SDK does not clobber it with schema
+// defaults, a StructuredContent carrying the google.rpc.Status proto
 // serialized as JSON.
 //
 // Note: the SDK's generic mcp.AddTool wrapper overwrites any
@@ -140,7 +140,7 @@ func TestGRPCInvalidArgumentRoundTrip(t *testing.T) {
 func TestGRPCInvalidArgumentStructuredStatusProto(t *testing.T) {
 	err := grpcstatus.Error(codes.InvalidArgument, "name must be ascii")
 	srv := protomcp.New("t", "0.0.1")
-	res, herr := srv.HandleError(context.Background(), &mcp.CallToolRequest{}, err)
+	res, herr := srv.HandleToolError(context.Background(), &mcp.CallToolRequest{}, err)
 	if herr != nil {
 		t.Fatalf("herr = %v, want nil", herr)
 	}
@@ -175,7 +175,7 @@ func TestComplexRoundTrip(t *testing.T) {
 
 	// Build a request with every shape: nested message, repeated scalar,
 	// enum (as string name), map<string,int32>. Pass the map directly as
-	// Arguments (typed `any`) — the SDK encodes it once; wrapping in
+	// Arguments (typed `any`), the SDK encodes it once; wrapping in
 	// json.RawMessage forces double-encoding which the server rejects.
 	args := map[string]any{
 		"name": "alice",
@@ -248,14 +248,14 @@ func TestComplexRoundTrip(t *testing.T) {
 // the underlying cancel reason as a gRPC status; we only require that
 // the call terminates rather than hangs. The exact error shape depends
 // on whether the SDK's in-memory transport threads ctx cancel through
-// to the tool handler — if it does, we observe DeadlineExceeded mapped
+// to the tool handler, if it does, we observe DeadlineExceeded mapped
 // to a JSON-RPC error; if it doesn't, the call may still return a
 // context error from the client side. Either outcome is acceptable; a
 // hang is not.
 func TestContextCancellationPropagation(t *testing.T) {
 	cs := buildGreeterServer(t)
 
-	// Bound the test with a generous safety timer — if the SDK's
+	// Bound the test with a generous safety timer, if the SDK's
 	// in-memory transport does not propagate cancel, we want the
 	// callerCtx deadline to fire and the test to fail fast rather than
 	// time out at the `go test` level.
@@ -282,7 +282,7 @@ func TestContextCancellationPropagation(t *testing.T) {
 		}
 		t.Logf("Slow call terminated with err: %v", err)
 	case <-time.After(2 * time.Second):
-		t.Fatalf("Slow did not terminate after context deadline expired — cancel did not propagate through any layer")
+		t.Fatalf("Slow did not terminate after context deadline expired, cancel did not propagate through any layer")
 	}
 }
 

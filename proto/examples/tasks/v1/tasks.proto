@@ -8,17 +8,22 @@ import "protomcp/v1/annotations.proto";
 
 option go_package = "github.com/gdsoumya/protomcp/pkg/api/gen/examples/tasks/v1;tasksv1";
 
-// Tasks is a CRUD gRPC service used to demonstrate protomcp's handling of
-// MCP tool hint annotations (read_only, idempotent, destructive) and the
-// OUTPUT_ONLY field-behavior stripping on input schemas.
+// Tasks is a CRUD gRPC service used to demonstrate protomcp's handling
+// of MCP tool hint annotations (read_only, idempotent, destructive),
+// OUTPUT_ONLY field-behavior stripping on input schemas, resource
+// templates for two distinct resource types (tasks://{id} and
+// tags://{id}), and a single `resource_list` RPC that enumerates both
+// types through a templated URI scheme.
 //
-// Clients see CRUD tools whose input schemas hide server-computed fields
-// (id, timestamps) while still receiving them in responses; the LLM
-// client can use read_only / idempotent / destructive hints to decide
-// how aggressively to retry or confirm an action.
+// Clients see CRUD tools whose input schemas hide server-computed
+// fields (id, timestamps) while still receiving them in responses; the
+// LLM client can use read_only / idempotent / destructive hints to
+// decide how aggressively to retry or confirm an action.
 service Tasks {
-  // ListTasks returns every task the server knows about. Read-only; safe
-  // for an LLM to call speculatively.
+  // ListTasks returns every task the server knows about. Read-only;
+  // safe for an LLM to call speculatively. Exposed only as a tool ,
+  // the flat `resources/list` surface is served by ListAllResources
+  // below, which covers both tasks and tags in one paginated stream.
   rpc ListTasks(ListTasksRequest) returns (ListTasksResponse) {
     option (protomcp.v1.tool) = {
       title: "List Tasks"
@@ -34,10 +39,28 @@ service Tasks {
       description: "Returns the task with the given id, or NOT_FOUND."
       read_only: true
     };
+    option (protomcp.v1.resource_template) = {
+      uri_template: "tasks://{id}"
+      uri_bindings: [{placeholder: "id", field: "id"}]
+      name_field: "{{title}}"
+      description_field: "{{description}}"
+    };
+  }
+
+  // GetTag returns a single tag by id. Exposed only as a resource
+  // template, no CRUD tool, because tags are auxiliary: the value is
+  // in being able to attach `tags://<id>` as chat context, not in
+  // manipulating them through the LLM.
+  rpc GetTag(GetTagRequest) returns (Tag) {
+    option (protomcp.v1.resource_template) = {
+      uri_template: "tags://{id}"
+      uri_bindings: [{placeholder: "id", field: "id"}]
+      name_field: "{{name}}"
+    };
   }
 
   // CreateTask inserts a new task and assigns its server-computed fields.
-  // Not idempotent — calling twice creates two tasks.
+  // Not idempotent, calling twice creates two tasks.
   rpc CreateTask(CreateTaskRequest) returns (Task) {
     option (protomcp.v1.tool) = {
       title: "Create Task"
@@ -45,7 +68,7 @@ service Tasks {
     };
   }
 
-  // UpdateTask replaces a task's mutable fields by id. Idempotent — applying
+  // UpdateTask replaces a task's mutable fields by id. Idempotent, applying
   // the same update twice leaves the task in the same state.
   rpc UpdateTask(UpdateTaskRequest) returns (Task) {
     option (protomcp.v1.tool) = {
@@ -56,7 +79,10 @@ service Tasks {
   }
 
   // DeleteTask removes a task by id. Destructive (removes data) and
-  // idempotent (deleting an already-missing id still succeeds).
+  // idempotent (deleting an already-missing id still succeeds). Gated on
+  // an MCP elicitation so clients surface a confirmation dialog before
+  // the upstream gRPC call runs, the confirmation prompt echoes the
+  // task id back via a Mustache template over the request message.
   rpc DeleteTask(DeleteTaskRequest) returns (DeleteTaskResponse) {
     option (protomcp.v1.tool) = {
       title: "Delete Task"
@@ -64,7 +90,70 @@ service Tasks {
       idempotent: true
       destructive: true
     };
+    option (protomcp.v1.elicitation) = {
+      message: "Delete task with id {{id}}? This cannot be undone."
+    };
   }
+
+  // ListAllResources is the single `resources/list` endpoint. It
+  // enumerates every task and every tag as individual resources in
+  // one paginated stream; the URI template `{type}://{id}` binds the
+  // scheme from each item's type field, yielding `tasks://<id>` for
+  // tasks and `tags://<id>` for tags. This is the idiomatic way to
+  // serve a multi-type `resources/list`, protomcp permits at most
+  // one `resource_list` annotation, so consolidation happens on the
+  // gRPC side.
+  rpc ListAllResources(ListAllResourcesRequest) returns (ListAllResourcesResponse) {
+    option (protomcp.v1.resource_list) = {
+      item_path: "items"
+      uri_template: "{type}://{id}"
+      uri_bindings: [
+        {placeholder: "type", field: "type"},
+        {placeholder: "id",   field: "id"}
+      ]
+      name_field: "{{name}}"
+      description_field: "{{description}}"
+    };
+  }
+
+  // WatchResourceChanges is a server-streaming feed that fires once
+  // per CRUD mutation (create/update/delete of a task or tag). The
+  // stream never closes on its own; protomcp's generated watcher
+  // reconnects on error. Each received message is a bare "something
+  // changed" signal, content is intentionally empty. Subscribers to
+  // `notifications/resources/list_changed` on the MCP side receive
+  // one notification per debounce window (10ms) regardless of how
+  // many backend events landed in that window.
+  rpc WatchResourceChanges(WatchResourceChangesRequest) returns (stream WatchResourceChangesEvent) {
+    option (protomcp.v1.resource_list_changed) = {};
+  }
+
+  // TaskReview surfaces a single task as an MCP prompt. It simply loads
+  // the task by id (reusing GetTask semantics) and renders a Mustache
+  // template against the response, producing one user-role PromptMessage
+  // the LLM client can use to kick off a review conversation.
+  rpc TaskReview(TaskReviewRequest) returns (Task) {
+    option (protomcp.v1.prompt) = {
+      name: "tasks_review"
+      title: "Review a task"
+      template: "Review task {{title}} (ID: {{id}}).\n\nCurrent status: done={{done}}\nDescription: {{description}}\n\nWhat should happen next?"
+    };
+  }
+}
+
+// Lifecycle state of a Task. Comments on each value flow into the
+// emitted JSON Schema's `enumDescriptions` so LLM clients get
+// per-value guidance without having to read docs.
+enum TaskStatus {
+  TASK_STATUS_UNSPECIFIED = 0;
+  // Task has been created but no work has started.
+  TASK_STATUS_PENDING = 1;
+  // Someone is actively working on the task.
+  TASK_STATUS_IN_PROGRESS = 2;
+  // Task is done; no further work expected.
+  TASK_STATUS_COMPLETED = 3;
+  // Task was abandoned before completion.
+  TASK_STATUS_CANCELLED = 4;
 }
 
 // Task is the CRUD resource. id and the timestamps are OUTPUT_ONLY:
@@ -72,11 +161,29 @@ service Tasks {
 // them in on write. They are still present on the response.
 message Task {
   string id = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+  // Short human-readable title shown in task lists.
+  // @example "Buy milk"
+  // @example "Finish Q2 report"
   string title = 2 [(google.api.field_behavior) = REQUIRED];
+  // Longer body describing what the task is about.
+  // @example "2L organic whole milk for the office fridge"
   string description = 3;
   bool done = 4;
   google.protobuf.Timestamp created_at = 5 [(google.api.field_behavior) = OUTPUT_ONLY];
   google.protobuf.Timestamp updated_at = 6 [(google.api.field_behavior) = OUTPUT_ONLY];
+  // Lifecycle state. See TaskStatus for the per-value meaning.
+  TaskStatus status = 7;
+}
+
+// Tag is the secondary resource type used to demonstrate multi-type
+// listing. Tags are static-ish labels users can attach to tasks; the
+// example server seeds a handful at startup.
+message Tag {
+  string id = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+  // Short display label.
+  // @example "urgent"
+  // @example "blocked"
+  string name = 2 [(google.api.field_behavior) = REQUIRED];
 }
 
 message ListTasksRequest {}
@@ -89,13 +196,17 @@ message GetTaskRequest {
   string id = 1 [(google.api.field_behavior) = REQUIRED];
 }
 
+message GetTagRequest {
+  string id = 1 [(google.api.field_behavior) = REQUIRED];
+}
+
 message CreateTaskRequest {
   // task.id and task.{created,updated}_at are OUTPUT_ONLY on Task and
   // are therefore stripped from this request's advertised input schema.
   Task task = 1 [(google.api.field_behavior) = REQUIRED];
 }
 
-// UpdateTaskRequest models the writable fields flat — we cannot reuse
+// UpdateTaskRequest models the writable fields flat, we cannot reuse
 // Task here because Task.id is OUTPUT_ONLY (stripped from input schemas),
 // and an update with no id cannot identify the task to mutate.
 message UpdateTaskRequest {
@@ -111,7 +222,45 @@ message DeleteTaskRequest {
 
 message DeleteTaskResponse {
   // existed is true when a task with the given id was actually removed;
-  // false means the id did not exist (still a successful response — the
+  // false means the id did not exist (still a successful response, the
   // operation is idempotent).
   bool existed = 1;
+}
+
+// ListAllResourcesRequest carries the pagination cursor decoded by
+// protomcp.OffsetPagination. `resource_list` middleware stamps these
+// fields at request time; handlers just forward them to their storage.
+message ListAllResourcesRequest {
+  int32 limit  = 1;
+  int32 offset = 2;
+}
+
+message ListAllResourcesResponse {
+  repeated ResourceItem items = 1;
+}
+
+// ResourceItem is one entry in the flat `resources/list` stream. The
+// `type` field lands in the URI scheme via the {type}://{id} template;
+// downstream readers use tasks://{id} and tags://{id} resource
+// templates to fetch full content.
+message ResourceItem {
+  // Resource scheme, one of "tasks", "tags".
+  string type = 1 [(google.api.field_behavior) = REQUIRED];
+  // Identifier within the scheme.
+  string id = 2 [(google.api.field_behavior) = REQUIRED];
+  // Display name rendered into Resource.name via Mustache.
+  string name = 3 [(google.api.field_behavior) = REQUIRED];
+  // Optional short description rendered into Resource.description.
+  string description = 4;
+}
+
+message WatchResourceChangesRequest {}
+
+// WatchResourceChangesEvent is intentionally empty, the stream
+// carries zero-payload "list changed" signals. The MCP client cannot
+// derive what changed; it is expected to re-fetch via `resources/list`.
+message WatchResourceChangesEvent {}
+
+message TaskReviewRequest {
+  string id = 1 [(google.api.field_behavior) = REQUIRED];
 }

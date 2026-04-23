@@ -1,6 +1,6 @@
 // Package auth_test is the end-to-end acceptance test for the core protomcp
 // use case: a stdlib HTTP middleware authenticates the caller and stashes the
-// resolved principal on the request context; a protomcp.Middleware reads the
+// resolved principal on the request context; a protomcp.ToolMiddleware reads the
 // principal and writes x-user-id / x-tenant into the outgoing gRPC metadata;
 // the upstream gRPC server's interceptor reads those keys out. Zero code
 // changes to the user's gRPC service.
@@ -49,12 +49,12 @@ func httpAuthMiddleware(valid map[string]principal) func(http.Handler) http.Hand
 	}
 }
 
-// principalToMetadata is a protomcp.Middleware. It reads the principal
+// principalToMetadata is a protomcp.ToolMiddleware. It reads the principal
 // that httpAuthMiddleware stashed on ctx and copies it into the outgoing
 // gRPC metadata so the upstream server can read it.
-func principalToMetadata() protomcp.Middleware {
-	return func(next protomcp.Handler) protomcp.Handler {
-		return func(ctx context.Context, req *mcp.CallToolRequest, g *protomcp.GRPCRequest) (*mcp.CallToolResult, error) {
+func principalToMetadata() protomcp.ToolMiddleware {
+	return func(next protomcp.ToolHandler) protomcp.ToolHandler {
+		return func(ctx context.Context, req *mcp.CallToolRequest, g *protomcp.GRPCData) (*mcp.CallToolResult, error) {
 			p, ok := ctx.Value(principalKey{}).(principal)
 			if !ok {
 				return nil, fmt.Errorf("principal missing on ctx (httpAuthMiddleware bug?)")
@@ -93,7 +93,7 @@ func startTestGRPCServer(t *testing.T) authv1.ProfileClient {
 
 // TestHTTPtoGRPCMetadataPropagation is the real end-to-end acceptance test.
 // It spins up an httptest.Server with httpAuthMiddleware wrapped around the
-// protomcp.Server (which is itself an http.Handler — the grpc-gateway
+// protomcp.Server (which is itself an http.Handler, the grpc-gateway
 // pattern), then runs an MCP client against it over the wire.
 func TestHTTPtoGRPCMetadataPropagation(t *testing.T) {
 	grpcClient := startTestGRPCServer(t)
@@ -103,10 +103,10 @@ func TestHTTPtoGRPCMetadataPropagation(t *testing.T) {
 		"Bearer bob-token":   {UserID: "bob", Tenant: "globex"},
 	}
 
-	// Build the MCP server with ONLY the metadata-propagation middleware —
+	// Build the MCP server with ONLY the metadata-propagation middleware ,
 	// HTTP-layer auth lives outside, as stdlib middleware.
 	srv := protomcp.New("auth-example", "0.1.0",
-		protomcp.WithMiddleware(principalToMetadata()),
+		protomcp.WithToolMiddleware(principalToMetadata()),
 	)
 	authv1.RegisterProfileMCPTools(srv, grpcClient)
 
@@ -128,7 +128,7 @@ func TestHTTPtoGRPCMetadataPropagation(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			ctx := context.Background()
 
-			// Unauthenticated clients can't even establish the MCP session —
+			// Unauthenticated clients can't even establish the MCP session ,
 			// the HTTP middleware rejects with 401 before the SDK sees them.
 			if tc.wantHTTP != 0 {
 				assertHTTP401(t, httpSrv.URL, tc.token)

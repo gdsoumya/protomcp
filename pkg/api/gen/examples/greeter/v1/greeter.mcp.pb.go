@@ -11,7 +11,6 @@ import (
 	protomcp "github.com/gdsoumya/protomcp/pkg/protomcp"
 	mcp "github.com/modelcontextprotocol/go-sdk/mcp"
 	metadata "google.golang.org/grpc/metadata"
-	protojson "google.golang.org/protobuf/encoding/protojson"
 	io "io"
 )
 
@@ -21,8 +20,8 @@ var _Greeter_StreamGreetings_InputSchema = protomcp.MustParseSchema(`{"propertie
 var _Greeter_StreamGreetings_OutputSchema = protomcp.MustParseSchema(`{"properties":{"message":{"type":"string"}},"type":"object"}`)
 var _Greeter_FailWith_InputSchema = protomcp.MustParseSchema(`{"properties":{"code":{"description":"Numeric gRPC status code (see google.golang.org/grpc/codes). 0 (OK)\nreturns a normal HelloReply instead of an error.","type":"integer"},"message":{"type":"string"}},"required":["code"],"type":"object"}`)
 var _Greeter_FailWith_OutputSchema = protomcp.MustParseSchema(`{"properties":{"message":{"type":"string"}},"type":"object"}`)
-var _Greeter_EchoComplex_InputSchema = protomcp.MustParseSchema(`{"properties":{"address":{"properties":{"city":{"type":"string"},"street":{"type":"string"},"zip":{"type":"string"}},"type":"object"},"counters":{"additionalProperties":{"type":"integer"},"propertyNames":{"type":"string"},"type":"object"},"mood":{"enum":["MOOD_UNSPECIFIED","MOOD_HAPPY","MOOD_SAD","MOOD_EXCITED"],"type":"string"},"name":{"type":"string"},"tags":{"items":{"type":"string"},"type":"array"}},"required":["name"],"type":"object"}`)
-var _Greeter_EchoComplex_OutputSchema = protomcp.MustParseSchema(`{"properties":{"address":{"properties":{"city":{"type":"string"},"street":{"type":"string"},"zip":{"type":"string"}},"type":"object"},"counters":{"additionalProperties":{"type":"integer"},"propertyNames":{"type":"string"},"type":"object"},"mood":{"enum":["MOOD_UNSPECIFIED","MOOD_HAPPY","MOOD_SAD","MOOD_EXCITED"],"type":"string"},"name":{"type":"string"},"tags":{"items":{"type":"string"},"type":"array"}},"type":"object"}`)
+var _Greeter_EchoComplex_InputSchema = protomcp.MustParseSchema(`{"properties":{"address":{"properties":{"city":{"type":"string"},"street":{"type":"string"},"zip":{"type":"string"}},"type":"object"},"counters":{"additionalProperties":{"type":"integer"},"propertyNames":{"type":"string"},"type":"object"},"mood":{"description":"Mood is an enum used by EchoComplex to verify enum round-tripping.","enum":["MOOD_UNSPECIFIED","MOOD_HAPPY","MOOD_SAD","MOOD_EXCITED"],"type":"string"},"name":{"type":"string"},"tags":{"items":{"type":"string"},"type":"array"}},"required":["name"],"type":"object"}`)
+var _Greeter_EchoComplex_OutputSchema = protomcp.MustParseSchema(`{"properties":{"address":{"properties":{"city":{"type":"string"},"street":{"type":"string"},"zip":{"type":"string"}},"type":"object"},"counters":{"additionalProperties":{"type":"integer"},"propertyNames":{"type":"string"},"type":"object"},"mood":{"description":"Mood is an enum used by EchoComplex to verify enum round-tripping.","enum":["MOOD_UNSPECIFIED","MOOD_HAPPY","MOOD_SAD","MOOD_EXCITED"],"type":"string"},"name":{"type":"string"},"tags":{"items":{"type":"string"},"type":"array"}},"type":"object"}`)
 var _Greeter_Slow_InputSchema = protomcp.MustParseSchema(`{"properties":{"name":{"type":"string"}},"required":["name"],"type":"object"}`)
 var _Greeter_Slow_OutputSchema = protomcp.MustParseSchema(`{"properties":{"message":{"type":"string"}},"type":"object"}`)
 
@@ -43,33 +42,34 @@ func RegisterGreeterMCPTools(srv *protomcp.Server, client GreeterClient) {
 		Annotations:  &mcp.ToolAnnotations{ReadOnlyHint: true},
 	}, func(ctx context.Context, req *mcp.CallToolRequest, raw json.RawMessage) (*mcp.CallToolResult, any, error) {
 		var in HelloRequest
-		if err := protojson.Unmarshal(raw, &in); err != nil {
-			return srv.FinishCall(ctx, req, nil, fmt.Errorf("invalid arguments: %w", err))
+		if err := srv.UnmarshalProto(raw, &in); err != nil {
+			return srv.FinishToolCall(ctx, req, nil, nil, fmt.Errorf("invalid arguments: %w", err))
 		}
-		// protojson unmarshaled whatever the client sent, including any
-		// fields marked google.api.field_behavior = OUTPUT_ONLY — which
-		// the advertised schema hides but the wire format does not
-		// enforce. Clear them so the upstream gRPC server never sees
-		// client-supplied values for server-computed fields.
+		// Clear OUTPUT_ONLY fields: the schema hides them but the
+		// wire format does not, so the upstream gRPC server must
+		// never see client-supplied values for server-computed fields.
 		protomcp.ClearOutputOnly(&in)
-		// Middleware receives &in via GRPCRequest.Input and may either
-		// mutate its fields in place (type-assert or proto-reflect) or
-		// replace the pointer entirely with another message of the same
-		// concrete type. The final handler always reads from g.Input so
-		// both forms propagate to the upstream call.
-		g := &protomcp.GRPCRequest{Input: &in, Metadata: metadata.MD{}}
+		// ToolMiddleware may mutate &in or replace the pointer; the
+		// final handler reads from g.Input so both forms propagate.
+		g := &protomcp.GRPCData{Input: &in, Metadata: metadata.MD{}}
+		// Forward the MCP progress token as a gRPC metadata header so
+		// downstream interceptors can correlate logs and traces.
+		if tok := req.Params.GetProgressToken(); tok != nil {
+			g.Metadata.Set(srv.ProgressTokenHeader(), protomcp.SanitizeMetadataValue(fmt.Sprintf("%v", tok)))
+		}
 
-		final := func(ctx context.Context, _ *mcp.CallToolRequest, g *protomcp.GRPCRequest) (*mcp.CallToolResult, error) {
+		final := func(ctx context.Context, _ *mcp.CallToolRequest, g *protomcp.GRPCData) (*mcp.CallToolResult, error) {
 			ctx = metadata.NewOutgoingContext(ctx, g.Metadata)
 			upstream, ok := g.Input.(*HelloRequest)
 			if !ok {
-				return nil, fmt.Errorf("GRPCRequest.Input: want *%s, got %T", "HelloRequest", g.Input)
+				return nil, fmt.Errorf("GRPCData.Input: want *%s, got %T", "HelloRequest", g.Input)
 			}
 			resp, err := client.SayHello(ctx, upstream)
 			if err != nil {
 				return nil, err
 			}
-			outBytes, err := protojson.Marshal(resp)
+			g.Output = resp
+			outBytes, err := srv.MarshalProto(resp)
 			if err != nil {
 				return nil, err
 			}
@@ -79,8 +79,8 @@ func RegisterGreeterMCPTools(srv *protomcp.Server, client GreeterClient) {
 			}, nil
 		}
 
-		result, err := srv.Chain(final)(ctx, req, g)
-		return srv.FinishCall(ctx, req, result, err)
+		result, err := srv.ToolChain(final)(ctx, req, g)
+		return srv.FinishToolCall(ctx, req, g, result, err)
 	})
 
 	mcp.AddTool(srv.SDK(), &mcp.Tool{
@@ -92,27 +92,27 @@ func RegisterGreeterMCPTools(srv *protomcp.Server, client GreeterClient) {
 		Annotations:  &mcp.ToolAnnotations{ReadOnlyHint: true},
 	}, func(ctx context.Context, req *mcp.CallToolRequest, raw json.RawMessage) (*mcp.CallToolResult, any, error) {
 		var in StreamGreetingsRequest
-		if err := protojson.Unmarshal(raw, &in); err != nil {
-			return srv.FinishCall(ctx, req, nil, fmt.Errorf("invalid arguments: %w", err))
+		if err := srv.UnmarshalProto(raw, &in); err != nil {
+			return srv.FinishToolCall(ctx, req, nil, nil, fmt.Errorf("invalid arguments: %w", err))
 		}
-		// protojson unmarshaled whatever the client sent, including any
-		// fields marked google.api.field_behavior = OUTPUT_ONLY — which
-		// the advertised schema hides but the wire format does not
-		// enforce. Clear them so the upstream gRPC server never sees
-		// client-supplied values for server-computed fields.
+		// Clear OUTPUT_ONLY fields: the schema hides them but the
+		// wire format does not, so the upstream gRPC server must
+		// never see client-supplied values for server-computed fields.
 		protomcp.ClearOutputOnly(&in)
-		// Middleware receives &in via GRPCRequest.Input and may either
-		// mutate its fields in place (type-assert or proto-reflect) or
-		// replace the pointer entirely with another message of the same
-		// concrete type. The final handler always reads from g.Input so
-		// both forms propagate to the upstream call.
-		g := &protomcp.GRPCRequest{Input: &in, Metadata: metadata.MD{}}
+		// ToolMiddleware may mutate &in or replace the pointer; the
+		// final handler reads from g.Input so both forms propagate.
+		g := &protomcp.GRPCData{Input: &in, Metadata: metadata.MD{}}
+		// Forward the MCP progress token as a gRPC metadata header so
+		// downstream interceptors can correlate logs and traces.
+		if tok := req.Params.GetProgressToken(); tok != nil {
+			g.Metadata.Set(srv.ProgressTokenHeader(), protomcp.SanitizeMetadataValue(fmt.Sprintf("%v", tok)))
+		}
 
-		final := func(ctx context.Context, req *mcp.CallToolRequest, g *protomcp.GRPCRequest) (*mcp.CallToolResult, error) {
+		final := func(ctx context.Context, req *mcp.CallToolRequest, g *protomcp.GRPCData) (*mcp.CallToolResult, error) {
 			ctx = metadata.NewOutgoingContext(ctx, g.Metadata)
 			upstream, ok := g.Input.(*StreamGreetingsRequest)
 			if !ok {
-				return nil, fmt.Errorf("GRPCRequest.Input: want *%s, got %T", "StreamGreetingsRequest", g.Input)
+				return nil, fmt.Errorf("GRPCData.Input: want *%s, got %T", "StreamGreetingsRequest", g.Input)
 			}
 			stream, err := client.StreamGreetings(ctx, upstream)
 			if err != nil {
@@ -128,17 +128,16 @@ func RegisterGreeterMCPTools(srv *protomcp.Server, client GreeterClient) {
 				if rErr != nil {
 					return nil, rErr
 				}
-				payload, mErr := protojson.Marshal(msg)
+				payload, mErr := srv.MarshalProto(msg)
 				if mErr != nil {
 					return nil, mErr
 				}
 				last = json.RawMessage(payload)
+				g.Output = msg
 				count++
-				// Progress counter is monotonic per MCP spec; payload rides in Message.
-				// If the caller disconnected, NotifyProgress errors; fall out of
-				// the loop via ctx.Err() instead of silently burning upstream
-				// messages. req.Session is guarded because a future SDK change
-				// or test harness may leave it nil.
+				// Progress counter is monotonic per MCP spec. On
+				// client disconnect, fall out via ctx.Err() rather
+				// than burning upstream messages silently.
 				if token := req.Params.GetProgressToken(); token != nil && req.Session != nil {
 					if nErr := req.Session.NotifyProgress(ctx, &mcp.ProgressNotificationParams{
 						ProgressToken: token,
@@ -151,14 +150,22 @@ func RegisterGreeterMCPTools(srv *protomcp.Server, client GreeterClient) {
 					}
 				}
 			}
+			// Empty stream: StructuredContent must be "{}" (not null)
+			// so schema validators do not fail on a missing object.
+			if count == 0 {
+				return &mcp.CallToolResult{
+					Content:           []mcp.Content{&mcp.TextContent{Text: "0 messages"}},
+					StructuredContent: json.RawMessage("{}"),
+				}, nil
+			}
 			return &mcp.CallToolResult{
 				Content:           []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf("%d messages; last: %s", count, string(last))}},
 				StructuredContent: last,
 			}, nil
 		}
 
-		result, err := srv.Chain(final)(ctx, req, g)
-		return srv.FinishCall(ctx, req, result, err)
+		result, err := srv.ToolChain(final)(ctx, req, g)
+		return srv.FinishToolCall(ctx, req, g, result, err)
 	})
 
 	mcp.AddTool(srv.SDK(), &mcp.Tool{
@@ -169,33 +176,34 @@ func RegisterGreeterMCPTools(srv *protomcp.Server, client GreeterClient) {
 		OutputSchema: _Greeter_FailWith_OutputSchema,
 	}, func(ctx context.Context, req *mcp.CallToolRequest, raw json.RawMessage) (*mcp.CallToolResult, any, error) {
 		var in FailWithRequest
-		if err := protojson.Unmarshal(raw, &in); err != nil {
-			return srv.FinishCall(ctx, req, nil, fmt.Errorf("invalid arguments: %w", err))
+		if err := srv.UnmarshalProto(raw, &in); err != nil {
+			return srv.FinishToolCall(ctx, req, nil, nil, fmt.Errorf("invalid arguments: %w", err))
 		}
-		// protojson unmarshaled whatever the client sent, including any
-		// fields marked google.api.field_behavior = OUTPUT_ONLY — which
-		// the advertised schema hides but the wire format does not
-		// enforce. Clear them so the upstream gRPC server never sees
-		// client-supplied values for server-computed fields.
+		// Clear OUTPUT_ONLY fields: the schema hides them but the
+		// wire format does not, so the upstream gRPC server must
+		// never see client-supplied values for server-computed fields.
 		protomcp.ClearOutputOnly(&in)
-		// Middleware receives &in via GRPCRequest.Input and may either
-		// mutate its fields in place (type-assert or proto-reflect) or
-		// replace the pointer entirely with another message of the same
-		// concrete type. The final handler always reads from g.Input so
-		// both forms propagate to the upstream call.
-		g := &protomcp.GRPCRequest{Input: &in, Metadata: metadata.MD{}}
+		// ToolMiddleware may mutate &in or replace the pointer; the
+		// final handler reads from g.Input so both forms propagate.
+		g := &protomcp.GRPCData{Input: &in, Metadata: metadata.MD{}}
+		// Forward the MCP progress token as a gRPC metadata header so
+		// downstream interceptors can correlate logs and traces.
+		if tok := req.Params.GetProgressToken(); tok != nil {
+			g.Metadata.Set(srv.ProgressTokenHeader(), protomcp.SanitizeMetadataValue(fmt.Sprintf("%v", tok)))
+		}
 
-		final := func(ctx context.Context, _ *mcp.CallToolRequest, g *protomcp.GRPCRequest) (*mcp.CallToolResult, error) {
+		final := func(ctx context.Context, _ *mcp.CallToolRequest, g *protomcp.GRPCData) (*mcp.CallToolResult, error) {
 			ctx = metadata.NewOutgoingContext(ctx, g.Metadata)
 			upstream, ok := g.Input.(*FailWithRequest)
 			if !ok {
-				return nil, fmt.Errorf("GRPCRequest.Input: want *%s, got %T", "FailWithRequest", g.Input)
+				return nil, fmt.Errorf("GRPCData.Input: want *%s, got %T", "FailWithRequest", g.Input)
 			}
 			resp, err := client.FailWith(ctx, upstream)
 			if err != nil {
 				return nil, err
 			}
-			outBytes, err := protojson.Marshal(resp)
+			g.Output = resp
+			outBytes, err := srv.MarshalProto(resp)
 			if err != nil {
 				return nil, err
 			}
@@ -205,8 +213,8 @@ func RegisterGreeterMCPTools(srv *protomcp.Server, client GreeterClient) {
 			}, nil
 		}
 
-		result, err := srv.Chain(final)(ctx, req, g)
-		return srv.FinishCall(ctx, req, result, err)
+		result, err := srv.ToolChain(final)(ctx, req, g)
+		return srv.FinishToolCall(ctx, req, g, result, err)
 	})
 
 	mcp.AddTool(srv.SDK(), &mcp.Tool{
@@ -218,33 +226,34 @@ func RegisterGreeterMCPTools(srv *protomcp.Server, client GreeterClient) {
 		Annotations:  &mcp.ToolAnnotations{ReadOnlyHint: true},
 	}, func(ctx context.Context, req *mcp.CallToolRequest, raw json.RawMessage) (*mcp.CallToolResult, any, error) {
 		var in EchoComplexRequest
-		if err := protojson.Unmarshal(raw, &in); err != nil {
-			return srv.FinishCall(ctx, req, nil, fmt.Errorf("invalid arguments: %w", err))
+		if err := srv.UnmarshalProto(raw, &in); err != nil {
+			return srv.FinishToolCall(ctx, req, nil, nil, fmt.Errorf("invalid arguments: %w", err))
 		}
-		// protojson unmarshaled whatever the client sent, including any
-		// fields marked google.api.field_behavior = OUTPUT_ONLY — which
-		// the advertised schema hides but the wire format does not
-		// enforce. Clear them so the upstream gRPC server never sees
-		// client-supplied values for server-computed fields.
+		// Clear OUTPUT_ONLY fields: the schema hides them but the
+		// wire format does not, so the upstream gRPC server must
+		// never see client-supplied values for server-computed fields.
 		protomcp.ClearOutputOnly(&in)
-		// Middleware receives &in via GRPCRequest.Input and may either
-		// mutate its fields in place (type-assert or proto-reflect) or
-		// replace the pointer entirely with another message of the same
-		// concrete type. The final handler always reads from g.Input so
-		// both forms propagate to the upstream call.
-		g := &protomcp.GRPCRequest{Input: &in, Metadata: metadata.MD{}}
+		// ToolMiddleware may mutate &in or replace the pointer; the
+		// final handler reads from g.Input so both forms propagate.
+		g := &protomcp.GRPCData{Input: &in, Metadata: metadata.MD{}}
+		// Forward the MCP progress token as a gRPC metadata header so
+		// downstream interceptors can correlate logs and traces.
+		if tok := req.Params.GetProgressToken(); tok != nil {
+			g.Metadata.Set(srv.ProgressTokenHeader(), protomcp.SanitizeMetadataValue(fmt.Sprintf("%v", tok)))
+		}
 
-		final := func(ctx context.Context, _ *mcp.CallToolRequest, g *protomcp.GRPCRequest) (*mcp.CallToolResult, error) {
+		final := func(ctx context.Context, _ *mcp.CallToolRequest, g *protomcp.GRPCData) (*mcp.CallToolResult, error) {
 			ctx = metadata.NewOutgoingContext(ctx, g.Metadata)
 			upstream, ok := g.Input.(*EchoComplexRequest)
 			if !ok {
-				return nil, fmt.Errorf("GRPCRequest.Input: want *%s, got %T", "EchoComplexRequest", g.Input)
+				return nil, fmt.Errorf("GRPCData.Input: want *%s, got %T", "EchoComplexRequest", g.Input)
 			}
 			resp, err := client.EchoComplex(ctx, upstream)
 			if err != nil {
 				return nil, err
 			}
-			outBytes, err := protojson.Marshal(resp)
+			g.Output = resp
+			outBytes, err := srv.MarshalProto(resp)
 			if err != nil {
 				return nil, err
 			}
@@ -254,8 +263,8 @@ func RegisterGreeterMCPTools(srv *protomcp.Server, client GreeterClient) {
 			}, nil
 		}
 
-		result, err := srv.Chain(final)(ctx, req, g)
-		return srv.FinishCall(ctx, req, result, err)
+		result, err := srv.ToolChain(final)(ctx, req, g)
+		return srv.FinishToolCall(ctx, req, g, result, err)
 	})
 
 	mcp.AddTool(srv.SDK(), &mcp.Tool{
@@ -266,33 +275,34 @@ func RegisterGreeterMCPTools(srv *protomcp.Server, client GreeterClient) {
 		OutputSchema: _Greeter_Slow_OutputSchema,
 	}, func(ctx context.Context, req *mcp.CallToolRequest, raw json.RawMessage) (*mcp.CallToolResult, any, error) {
 		var in HelloRequest
-		if err := protojson.Unmarshal(raw, &in); err != nil {
-			return srv.FinishCall(ctx, req, nil, fmt.Errorf("invalid arguments: %w", err))
+		if err := srv.UnmarshalProto(raw, &in); err != nil {
+			return srv.FinishToolCall(ctx, req, nil, nil, fmt.Errorf("invalid arguments: %w", err))
 		}
-		// protojson unmarshaled whatever the client sent, including any
-		// fields marked google.api.field_behavior = OUTPUT_ONLY — which
-		// the advertised schema hides but the wire format does not
-		// enforce. Clear them so the upstream gRPC server never sees
-		// client-supplied values for server-computed fields.
+		// Clear OUTPUT_ONLY fields: the schema hides them but the
+		// wire format does not, so the upstream gRPC server must
+		// never see client-supplied values for server-computed fields.
 		protomcp.ClearOutputOnly(&in)
-		// Middleware receives &in via GRPCRequest.Input and may either
-		// mutate its fields in place (type-assert or proto-reflect) or
-		// replace the pointer entirely with another message of the same
-		// concrete type. The final handler always reads from g.Input so
-		// both forms propagate to the upstream call.
-		g := &protomcp.GRPCRequest{Input: &in, Metadata: metadata.MD{}}
+		// ToolMiddleware may mutate &in or replace the pointer; the
+		// final handler reads from g.Input so both forms propagate.
+		g := &protomcp.GRPCData{Input: &in, Metadata: metadata.MD{}}
+		// Forward the MCP progress token as a gRPC metadata header so
+		// downstream interceptors can correlate logs and traces.
+		if tok := req.Params.GetProgressToken(); tok != nil {
+			g.Metadata.Set(srv.ProgressTokenHeader(), protomcp.SanitizeMetadataValue(fmt.Sprintf("%v", tok)))
+		}
 
-		final := func(ctx context.Context, _ *mcp.CallToolRequest, g *protomcp.GRPCRequest) (*mcp.CallToolResult, error) {
+		final := func(ctx context.Context, _ *mcp.CallToolRequest, g *protomcp.GRPCData) (*mcp.CallToolResult, error) {
 			ctx = metadata.NewOutgoingContext(ctx, g.Metadata)
 			upstream, ok := g.Input.(*HelloRequest)
 			if !ok {
-				return nil, fmt.Errorf("GRPCRequest.Input: want *%s, got %T", "HelloRequest", g.Input)
+				return nil, fmt.Errorf("GRPCData.Input: want *%s, got %T", "HelloRequest", g.Input)
 			}
 			resp, err := client.Slow(ctx, upstream)
 			if err != nil {
 				return nil, err
 			}
-			outBytes, err := protojson.Marshal(resp)
+			g.Output = resp
+			outBytes, err := srv.MarshalProto(resp)
 			if err != nil {
 				return nil, err
 			}
@@ -302,8 +312,8 @@ func RegisterGreeterMCPTools(srv *protomcp.Server, client GreeterClient) {
 			}, nil
 		}
 
-		result, err := srv.Chain(final)(ctx, req, g)
-		return srv.FinishCall(ctx, req, result, err)
+		result, err := srv.ToolChain(final)(ctx, req, g)
+		return srv.FinishToolCall(ctx, req, g, result, err)
 	})
 
 }

@@ -47,7 +47,7 @@ message TestInner {
 
 // TestNested holds a non-OUTPUT_ONLY field of message type. The outer
 // field must survive ClearOutputOnly, but the inner OUTPUT_ONLY field
-// must be cleared — proving recursion works.
+// must be cleared, proving recursion works.
 message TestNested {
   TestInner inner = 1;
 }
@@ -83,7 +83,7 @@ message TestOneofOutputOnly {
 }
 
 // TestRepeatedOutputOnlyScalar exercises OUTPUT_ONLY on a repeated
-// scalar field — the whole list must be cleared.
+// scalar field, the whole list must be cleared.
 message TestRepeatedOutputOnlyScalar {
   repeated string server_ids = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
   repeated string names      = 2;

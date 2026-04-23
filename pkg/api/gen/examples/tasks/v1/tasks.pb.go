@@ -24,17 +24,86 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+// Lifecycle state of a Task. Comments on each value flow into the
+// emitted JSON Schema's `enumDescriptions` so LLM clients get
+// per-value guidance without having to read docs.
+type TaskStatus int32
+
+const (
+	TaskStatus_TASK_STATUS_UNSPECIFIED TaskStatus = 0
+	// Task has been created but no work has started.
+	TaskStatus_TASK_STATUS_PENDING TaskStatus = 1
+	// Someone is actively working on the task.
+	TaskStatus_TASK_STATUS_IN_PROGRESS TaskStatus = 2
+	// Task is done; no further work expected.
+	TaskStatus_TASK_STATUS_COMPLETED TaskStatus = 3
+	// Task was abandoned before completion.
+	TaskStatus_TASK_STATUS_CANCELLED TaskStatus = 4
+)
+
+// Enum value maps for TaskStatus.
+var (
+	TaskStatus_name = map[int32]string{
+		0: "TASK_STATUS_UNSPECIFIED",
+		1: "TASK_STATUS_PENDING",
+		2: "TASK_STATUS_IN_PROGRESS",
+		3: "TASK_STATUS_COMPLETED",
+		4: "TASK_STATUS_CANCELLED",
+	}
+	TaskStatus_value = map[string]int32{
+		"TASK_STATUS_UNSPECIFIED": 0,
+		"TASK_STATUS_PENDING":     1,
+		"TASK_STATUS_IN_PROGRESS": 2,
+		"TASK_STATUS_COMPLETED":   3,
+		"TASK_STATUS_CANCELLED":   4,
+	}
+)
+
+func (x TaskStatus) Enum() *TaskStatus {
+	p := new(TaskStatus)
+	*p = x
+	return p
+}
+
+func (x TaskStatus) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (TaskStatus) Descriptor() protoreflect.EnumDescriptor {
+	return file_examples_tasks_v1_tasks_proto_enumTypes[0].Descriptor()
+}
+
+func (TaskStatus) Type() protoreflect.EnumType {
+	return &file_examples_tasks_v1_tasks_proto_enumTypes[0]
+}
+
+func (x TaskStatus) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use TaskStatus.Descriptor instead.
+func (TaskStatus) EnumDescriptor() ([]byte, []int) {
+	return file_examples_tasks_v1_tasks_proto_rawDescGZIP(), []int{0}
+}
+
 // Task is the CRUD resource. id and the timestamps are OUTPUT_ONLY:
 // the input schema for Create / Update omits them, and the server fills
 // them in on write. They are still present on the response.
 type Task struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	Title         string                 `protobuf:"bytes,2,opt,name=title,proto3" json:"title,omitempty"`
-	Description   string                 `protobuf:"bytes,3,opt,name=description,proto3" json:"description,omitempty"`
-	Done          bool                   `protobuf:"varint,4,opt,name=done,proto3" json:"done,omitempty"`
-	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
-	UpdatedAt     *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Id    string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	// Short human-readable title shown in task lists.
+	// @example "Buy milk"
+	// @example "Finish Q2 report"
+	Title string `protobuf:"bytes,2,opt,name=title,proto3" json:"title,omitempty"`
+	// Longer body describing what the task is about.
+	// @example "2L organic whole milk for the office fridge"
+	Description string                 `protobuf:"bytes,3,opt,name=description,proto3" json:"description,omitempty"`
+	Done        bool                   `protobuf:"varint,4,opt,name=done,proto3" json:"done,omitempty"`
+	CreatedAt   *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	UpdatedAt   *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	// Lifecycle state. See TaskStatus for the per-value meaning.
+	Status        TaskStatus `protobuf:"varint,7,opt,name=status,proto3,enum=protomcp.examples.tasks.v1.TaskStatus" json:"status,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -111,6 +180,71 @@ func (x *Task) GetUpdatedAt() *timestamppb.Timestamp {
 	return nil
 }
 
+func (x *Task) GetStatus() TaskStatus {
+	if x != nil {
+		return x.Status
+	}
+	return TaskStatus_TASK_STATUS_UNSPECIFIED
+}
+
+// Tag is the secondary resource type used to demonstrate multi-type
+// listing. Tags are static-ish labels users can attach to tasks; the
+// example server seeds a handful at startup.
+type Tag struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Id    string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	// Short display label.
+	// @example "urgent"
+	// @example "blocked"
+	Name          string `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Tag) Reset() {
+	*x = Tag{}
+	mi := &file_examples_tasks_v1_tasks_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Tag) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Tag) ProtoMessage() {}
+
+func (x *Tag) ProtoReflect() protoreflect.Message {
+	mi := &file_examples_tasks_v1_tasks_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Tag.ProtoReflect.Descriptor instead.
+func (*Tag) Descriptor() ([]byte, []int) {
+	return file_examples_tasks_v1_tasks_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *Tag) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *Tag) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
 type ListTasksRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -119,7 +253,7 @@ type ListTasksRequest struct {
 
 func (x *ListTasksRequest) Reset() {
 	*x = ListTasksRequest{}
-	mi := &file_examples_tasks_v1_tasks_proto_msgTypes[1]
+	mi := &file_examples_tasks_v1_tasks_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -131,7 +265,7 @@ func (x *ListTasksRequest) String() string {
 func (*ListTasksRequest) ProtoMessage() {}
 
 func (x *ListTasksRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_examples_tasks_v1_tasks_proto_msgTypes[1]
+	mi := &file_examples_tasks_v1_tasks_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -144,7 +278,7 @@ func (x *ListTasksRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListTasksRequest.ProtoReflect.Descriptor instead.
 func (*ListTasksRequest) Descriptor() ([]byte, []int) {
-	return file_examples_tasks_v1_tasks_proto_rawDescGZIP(), []int{1}
+	return file_examples_tasks_v1_tasks_proto_rawDescGZIP(), []int{2}
 }
 
 type ListTasksResponse struct {
@@ -156,7 +290,7 @@ type ListTasksResponse struct {
 
 func (x *ListTasksResponse) Reset() {
 	*x = ListTasksResponse{}
-	mi := &file_examples_tasks_v1_tasks_proto_msgTypes[2]
+	mi := &file_examples_tasks_v1_tasks_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -168,7 +302,7 @@ func (x *ListTasksResponse) String() string {
 func (*ListTasksResponse) ProtoMessage() {}
 
 func (x *ListTasksResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_examples_tasks_v1_tasks_proto_msgTypes[2]
+	mi := &file_examples_tasks_v1_tasks_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -181,7 +315,7 @@ func (x *ListTasksResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListTasksResponse.ProtoReflect.Descriptor instead.
 func (*ListTasksResponse) Descriptor() ([]byte, []int) {
-	return file_examples_tasks_v1_tasks_proto_rawDescGZIP(), []int{2}
+	return file_examples_tasks_v1_tasks_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *ListTasksResponse) GetTasks() []*Task {
@@ -200,7 +334,7 @@ type GetTaskRequest struct {
 
 func (x *GetTaskRequest) Reset() {
 	*x = GetTaskRequest{}
-	mi := &file_examples_tasks_v1_tasks_proto_msgTypes[3]
+	mi := &file_examples_tasks_v1_tasks_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -212,7 +346,7 @@ func (x *GetTaskRequest) String() string {
 func (*GetTaskRequest) ProtoMessage() {}
 
 func (x *GetTaskRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_examples_tasks_v1_tasks_proto_msgTypes[3]
+	mi := &file_examples_tasks_v1_tasks_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -225,10 +359,54 @@ func (x *GetTaskRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetTaskRequest.ProtoReflect.Descriptor instead.
 func (*GetTaskRequest) Descriptor() ([]byte, []int) {
-	return file_examples_tasks_v1_tasks_proto_rawDescGZIP(), []int{3}
+	return file_examples_tasks_v1_tasks_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *GetTaskRequest) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+type GetTagRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetTagRequest) Reset() {
+	*x = GetTagRequest{}
+	mi := &file_examples_tasks_v1_tasks_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetTagRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetTagRequest) ProtoMessage() {}
+
+func (x *GetTagRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_examples_tasks_v1_tasks_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetTagRequest.ProtoReflect.Descriptor instead.
+func (*GetTagRequest) Descriptor() ([]byte, []int) {
+	return file_examples_tasks_v1_tasks_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *GetTagRequest) GetId() string {
 	if x != nil {
 		return x.Id
 	}
@@ -246,7 +424,7 @@ type CreateTaskRequest struct {
 
 func (x *CreateTaskRequest) Reset() {
 	*x = CreateTaskRequest{}
-	mi := &file_examples_tasks_v1_tasks_proto_msgTypes[4]
+	mi := &file_examples_tasks_v1_tasks_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -258,7 +436,7 @@ func (x *CreateTaskRequest) String() string {
 func (*CreateTaskRequest) ProtoMessage() {}
 
 func (x *CreateTaskRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_examples_tasks_v1_tasks_proto_msgTypes[4]
+	mi := &file_examples_tasks_v1_tasks_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -271,7 +449,7 @@ func (x *CreateTaskRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateTaskRequest.ProtoReflect.Descriptor instead.
 func (*CreateTaskRequest) Descriptor() ([]byte, []int) {
-	return file_examples_tasks_v1_tasks_proto_rawDescGZIP(), []int{4}
+	return file_examples_tasks_v1_tasks_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *CreateTaskRequest) GetTask() *Task {
@@ -281,7 +459,7 @@ func (x *CreateTaskRequest) GetTask() *Task {
 	return nil
 }
 
-// UpdateTaskRequest models the writable fields flat — we cannot reuse
+// UpdateTaskRequest models the writable fields flat, we cannot reuse
 // Task here because Task.id is OUTPUT_ONLY (stripped from input schemas),
 // and an update with no id cannot identify the task to mutate.
 type UpdateTaskRequest struct {
@@ -296,7 +474,7 @@ type UpdateTaskRequest struct {
 
 func (x *UpdateTaskRequest) Reset() {
 	*x = UpdateTaskRequest{}
-	mi := &file_examples_tasks_v1_tasks_proto_msgTypes[5]
+	mi := &file_examples_tasks_v1_tasks_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -308,7 +486,7 @@ func (x *UpdateTaskRequest) String() string {
 func (*UpdateTaskRequest) ProtoMessage() {}
 
 func (x *UpdateTaskRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_examples_tasks_v1_tasks_proto_msgTypes[5]
+	mi := &file_examples_tasks_v1_tasks_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -321,7 +499,7 @@ func (x *UpdateTaskRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateTaskRequest.ProtoReflect.Descriptor instead.
 func (*UpdateTaskRequest) Descriptor() ([]byte, []int) {
-	return file_examples_tasks_v1_tasks_proto_rawDescGZIP(), []int{5}
+	return file_examples_tasks_v1_tasks_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *UpdateTaskRequest) GetId() string {
@@ -361,7 +539,7 @@ type DeleteTaskRequest struct {
 
 func (x *DeleteTaskRequest) Reset() {
 	*x = DeleteTaskRequest{}
-	mi := &file_examples_tasks_v1_tasks_proto_msgTypes[6]
+	mi := &file_examples_tasks_v1_tasks_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -373,7 +551,7 @@ func (x *DeleteTaskRequest) String() string {
 func (*DeleteTaskRequest) ProtoMessage() {}
 
 func (x *DeleteTaskRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_examples_tasks_v1_tasks_proto_msgTypes[6]
+	mi := &file_examples_tasks_v1_tasks_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -386,7 +564,7 @@ func (x *DeleteTaskRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteTaskRequest.ProtoReflect.Descriptor instead.
 func (*DeleteTaskRequest) Descriptor() ([]byte, []int) {
-	return file_examples_tasks_v1_tasks_proto_rawDescGZIP(), []int{6}
+	return file_examples_tasks_v1_tasks_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *DeleteTaskRequest) GetId() string {
@@ -399,7 +577,7 @@ func (x *DeleteTaskRequest) GetId() string {
 type DeleteTaskResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// existed is true when a task with the given id was actually removed;
-	// false means the id did not exist (still a successful response — the
+	// false means the id did not exist (still a successful response, the
 	// operation is idempotent).
 	Existed       bool `protobuf:"varint,1,opt,name=existed,proto3" json:"existed,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -408,7 +586,7 @@ type DeleteTaskResponse struct {
 
 func (x *DeleteTaskResponse) Reset() {
 	*x = DeleteTaskResponse{}
-	mi := &file_examples_tasks_v1_tasks_proto_msgTypes[7]
+	mi := &file_examples_tasks_v1_tasks_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -420,7 +598,7 @@ func (x *DeleteTaskResponse) String() string {
 func (*DeleteTaskResponse) ProtoMessage() {}
 
 func (x *DeleteTaskResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_examples_tasks_v1_tasks_proto_msgTypes[7]
+	mi := &file_examples_tasks_v1_tasks_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -433,7 +611,7 @@ func (x *DeleteTaskResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteTaskResponse.ProtoReflect.Descriptor instead.
 func (*DeleteTaskResponse) Descriptor() ([]byte, []int) {
-	return file_examples_tasks_v1_tasks_proto_rawDescGZIP(), []int{7}
+	return file_examples_tasks_v1_tasks_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *DeleteTaskResponse) GetExisted() bool {
@@ -443,11 +621,305 @@ func (x *DeleteTaskResponse) GetExisted() bool {
 	return false
 }
 
+// ListAllResourcesRequest carries the pagination cursor decoded by
+// protomcp.OffsetPagination. `resource_list` middleware stamps these
+// fields at request time; handlers just forward them to their storage.
+type ListAllResourcesRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Limit         int32                  `protobuf:"varint,1,opt,name=limit,proto3" json:"limit,omitempty"`
+	Offset        int32                  `protobuf:"varint,2,opt,name=offset,proto3" json:"offset,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListAllResourcesRequest) Reset() {
+	*x = ListAllResourcesRequest{}
+	mi := &file_examples_tasks_v1_tasks_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListAllResourcesRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListAllResourcesRequest) ProtoMessage() {}
+
+func (x *ListAllResourcesRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_examples_tasks_v1_tasks_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListAllResourcesRequest.ProtoReflect.Descriptor instead.
+func (*ListAllResourcesRequest) Descriptor() ([]byte, []int) {
+	return file_examples_tasks_v1_tasks_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *ListAllResourcesRequest) GetLimit() int32 {
+	if x != nil {
+		return x.Limit
+	}
+	return 0
+}
+
+func (x *ListAllResourcesRequest) GetOffset() int32 {
+	if x != nil {
+		return x.Offset
+	}
+	return 0
+}
+
+type ListAllResourcesResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Items         []*ResourceItem        `protobuf:"bytes,1,rep,name=items,proto3" json:"items,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListAllResourcesResponse) Reset() {
+	*x = ListAllResourcesResponse{}
+	mi := &file_examples_tasks_v1_tasks_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListAllResourcesResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListAllResourcesResponse) ProtoMessage() {}
+
+func (x *ListAllResourcesResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_examples_tasks_v1_tasks_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListAllResourcesResponse.ProtoReflect.Descriptor instead.
+func (*ListAllResourcesResponse) Descriptor() ([]byte, []int) {
+	return file_examples_tasks_v1_tasks_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *ListAllResourcesResponse) GetItems() []*ResourceItem {
+	if x != nil {
+		return x.Items
+	}
+	return nil
+}
+
+// ResourceItem is one entry in the flat `resources/list` stream. The
+// `type` field lands in the URI scheme via the {type}://{id} template;
+// downstream readers use tasks://{id} and tags://{id} resource
+// templates to fetch full content.
+type ResourceItem struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Resource scheme, one of "tasks", "tags".
+	Type string `protobuf:"bytes,1,opt,name=type,proto3" json:"type,omitempty"`
+	// Identifier within the scheme.
+	Id string `protobuf:"bytes,2,opt,name=id,proto3" json:"id,omitempty"`
+	// Display name rendered into Resource.name via Mustache.
+	Name string `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
+	// Optional short description rendered into Resource.description.
+	Description   string `protobuf:"bytes,4,opt,name=description,proto3" json:"description,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ResourceItem) Reset() {
+	*x = ResourceItem{}
+	mi := &file_examples_tasks_v1_tasks_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ResourceItem) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ResourceItem) ProtoMessage() {}
+
+func (x *ResourceItem) ProtoReflect() protoreflect.Message {
+	mi := &file_examples_tasks_v1_tasks_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ResourceItem.ProtoReflect.Descriptor instead.
+func (*ResourceItem) Descriptor() ([]byte, []int) {
+	return file_examples_tasks_v1_tasks_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *ResourceItem) GetType() string {
+	if x != nil {
+		return x.Type
+	}
+	return ""
+}
+
+func (x *ResourceItem) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *ResourceItem) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *ResourceItem) GetDescription() string {
+	if x != nil {
+		return x.Description
+	}
+	return ""
+}
+
+type WatchResourceChangesRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *WatchResourceChangesRequest) Reset() {
+	*x = WatchResourceChangesRequest{}
+	mi := &file_examples_tasks_v1_tasks_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *WatchResourceChangesRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*WatchResourceChangesRequest) ProtoMessage() {}
+
+func (x *WatchResourceChangesRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_examples_tasks_v1_tasks_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use WatchResourceChangesRequest.ProtoReflect.Descriptor instead.
+func (*WatchResourceChangesRequest) Descriptor() ([]byte, []int) {
+	return file_examples_tasks_v1_tasks_proto_rawDescGZIP(), []int{13}
+}
+
+// WatchResourceChangesEvent is intentionally empty, the stream
+// carries zero-payload "list changed" signals. The MCP client cannot
+// derive what changed; it is expected to re-fetch via `resources/list`.
+type WatchResourceChangesEvent struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *WatchResourceChangesEvent) Reset() {
+	*x = WatchResourceChangesEvent{}
+	mi := &file_examples_tasks_v1_tasks_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *WatchResourceChangesEvent) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*WatchResourceChangesEvent) ProtoMessage() {}
+
+func (x *WatchResourceChangesEvent) ProtoReflect() protoreflect.Message {
+	mi := &file_examples_tasks_v1_tasks_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use WatchResourceChangesEvent.ProtoReflect.Descriptor instead.
+func (*WatchResourceChangesEvent) Descriptor() ([]byte, []int) {
+	return file_examples_tasks_v1_tasks_proto_rawDescGZIP(), []int{14}
+}
+
+type TaskReviewRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TaskReviewRequest) Reset() {
+	*x = TaskReviewRequest{}
+	mi := &file_examples_tasks_v1_tasks_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TaskReviewRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TaskReviewRequest) ProtoMessage() {}
+
+func (x *TaskReviewRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_examples_tasks_v1_tasks_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TaskReviewRequest.ProtoReflect.Descriptor instead.
+func (*TaskReviewRequest) Descriptor() ([]byte, []int) {
+	return file_examples_tasks_v1_tasks_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *TaskReviewRequest) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
 var File_examples_tasks_v1_tasks_proto protoreflect.FileDescriptor
 
 const file_examples_tasks_v1_tasks_proto_rawDesc = "" +
 	"\n" +
-	"\x1dexamples/tasks/v1/tasks.proto\x12\x1aprotomcp.examples.tasks.v1\x1a\x1fgoogle/api/field_behavior.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x1dprotomcp/v1/annotations.proto\"\xec\x01\n" +
+	"\x1dexamples/tasks/v1/tasks.proto\x12\x1aprotomcp.examples.tasks.v1\x1a\x1fgoogle/api/field_behavior.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x1dprotomcp/v1/annotations.proto\"\xac\x02\n" +
 	"\x04Task\x12\x13\n" +
 	"\x02id\x18\x01 \x01(\tB\x03\xe0A\x03R\x02id\x12\x19\n" +
 	"\x05title\x18\x02 \x01(\tB\x03\xe0A\x02R\x05title\x12 \n" +
@@ -456,11 +928,17 @@ const file_examples_tasks_v1_tasks_proto_rawDesc = "" +
 	"\n" +
 	"created_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampB\x03\xe0A\x03R\tcreatedAt\x12>\n" +
 	"\n" +
-	"updated_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampB\x03\xe0A\x03R\tupdatedAt\"\x12\n" +
+	"updated_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampB\x03\xe0A\x03R\tupdatedAt\x12>\n" +
+	"\x06status\x18\a \x01(\x0e2&.protomcp.examples.tasks.v1.TaskStatusR\x06status\"3\n" +
+	"\x03Tag\x12\x13\n" +
+	"\x02id\x18\x01 \x01(\tB\x03\xe0A\x03R\x02id\x12\x17\n" +
+	"\x04name\x18\x02 \x01(\tB\x03\xe0A\x02R\x04name\"\x12\n" +
 	"\x10ListTasksRequest\"K\n" +
 	"\x11ListTasksResponse\x126\n" +
 	"\x05tasks\x18\x01 \x03(\v2 .protomcp.examples.tasks.v1.TaskR\x05tasks\"%\n" +
 	"\x0eGetTaskRequest\x12\x13\n" +
+	"\x02id\x18\x01 \x01(\tB\x03\xe0A\x02R\x02id\"$\n" +
+	"\rGetTagRequest\x12\x13\n" +
 	"\x02id\x18\x01 \x01(\tB\x03\xe0A\x02R\x02id\"N\n" +
 	"\x11CreateTaskRequest\x129\n" +
 	"\x04task\x18\x01 \x01(\v2 .protomcp.examples.tasks.v1.TaskB\x03\xe0A\x02R\x04task\"y\n" +
@@ -472,17 +950,57 @@ const file_examples_tasks_v1_tasks_proto_rawDesc = "" +
 	"\x11DeleteTaskRequest\x12\x13\n" +
 	"\x02id\x18\x01 \x01(\tB\x03\xe0A\x02R\x02id\".\n" +
 	"\x12DeleteTaskResponse\x12\x18\n" +
-	"\aexisted\x18\x01 \x01(\bR\aexisted2\x88\a\n" +
+	"\aexisted\x18\x01 \x01(\bR\aexisted\"G\n" +
+	"\x17ListAllResourcesRequest\x12\x14\n" +
+	"\x05limit\x18\x01 \x01(\x05R\x05limit\x12\x16\n" +
+	"\x06offset\x18\x02 \x01(\x05R\x06offset\"Z\n" +
+	"\x18ListAllResourcesResponse\x12>\n" +
+	"\x05items\x18\x01 \x03(\v2(.protomcp.examples.tasks.v1.ResourceItemR\x05items\"w\n" +
+	"\fResourceItem\x12\x17\n" +
+	"\x04type\x18\x01 \x01(\tB\x03\xe0A\x02R\x04type\x12\x13\n" +
+	"\x02id\x18\x02 \x01(\tB\x03\xe0A\x02R\x02id\x12\x17\n" +
+	"\x04name\x18\x03 \x01(\tB\x03\xe0A\x02R\x04name\x12 \n" +
+	"\vdescription\x18\x04 \x01(\tR\vdescription\"\x1d\n" +
+	"\x1bWatchResourceChangesRequest\"\x1b\n" +
+	"\x19WatchResourceChangesEvent\"(\n" +
+	"\x11TaskReviewRequest\x12\x13\n" +
+	"\x02id\x18\x01 \x01(\tB\x03\xe0A\x02R\x02id*\x95\x01\n" +
+	"\n" +
+	"TaskStatus\x12\x1b\n" +
+	"\x17TASK_STATUS_UNSPECIFIED\x10\x00\x12\x17\n" +
+	"\x13TASK_STATUS_PENDING\x10\x01\x12\x1b\n" +
+	"\x17TASK_STATUS_IN_PROGRESS\x10\x02\x12\x19\n" +
+	"\x15TASK_STATUS_COMPLETED\x10\x03\x12\x19\n" +
+	"\x15TASK_STATUS_CANCELLED\x10\x042\xd6\r\n" +
 	"\x05Tasks\x12\xa6\x01\n" +
 	"\tListTasks\x12,.protomcp.examples.tasks.v1.ListTasksRequest\x1a-.protomcp.examples.tasks.v1.ListTasksResponse\"<\x8a\xb5\x188\x12\n" +
-	"List Tasks\x1a(Returns every task stored on the server. \x01\x12\x9c\x01\n" +
-	"\aGetTask\x12*.protomcp.examples.tasks.v1.GetTaskRequest\x1a .protomcp.examples.tasks.v1.Task\"C\x8a\xb5\x18?\x12\bGet Task\x1a1Returns the task with the given id, or NOT_FOUND. \x01\x12\xa7\x01\n" +
+	"List Tasks\x1a(Returns every task stored on the server. \x01\x12\xd4\x01\n" +
+	"\aGetTask\x12*.protomcp.examples.tasks.v1.GetTaskRequest\x1a .protomcp.examples.tasks.v1.Task\"{\x8a\xb5\x18?\x12\bGet Task\x1a1Returns the task with the given id, or NOT_FOUND. \x01\x9a\xb5\x184\n" +
+	"\ftasks://{id}\x12\b\n" +
+	"\x02id\x12\x02id\x1a\t{{title}}\"\x0f{{description}}\x12{\n" +
+	"\x06GetTag\x12).protomcp.examples.tasks.v1.GetTagRequest\x1a\x1f.protomcp.examples.tasks.v1.Tag\"%\x9a\xb5\x18!\n" +
+	"\vtags://{id}\x12\b\n" +
+	"\x02id\x12\x02id\x1a\b{{name}}\x12\xa7\x01\n" +
 	"\n" +
 	"CreateTask\x12-.protomcp.examples.tasks.v1.CreateTaskRequest\x1a .protomcp.examples.tasks.v1.Task\"H\x8a\xb5\x18D\x12\vCreate Task\x1a5Creates a new task. Server assigns id and timestamps.\x12\xac\x01\n" +
 	"\n" +
-	"UpdateTask\x12-.protomcp.examples.tasks.v1.UpdateTaskRequest\x1a .protomcp.examples.tasks.v1.Task\"M\x8a\xb5\x18I\x12\vUpdate Task\x1a8Updates a task's title / description / done. Idempotent.(\x01\x12\xdd\x01\n" +
+	"UpdateTask\x12-.protomcp.examples.tasks.v1.UpdateTaskRequest\x1a .protomcp.examples.tasks.v1.Task\"M\x8a\xb5\x18I\x12\vUpdate Task\x1a8Updates a task's title / description / done. Idempotent.(\x01\x12\x96\x02\n" +
 	"\n" +
-	"DeleteTask\x12-.protomcp.examples.tasks.v1.DeleteTaskRequest\x1a..protomcp.examples.tasks.v1.DeleteTaskResponse\"p\x8a\xb5\x18l\x12\vDelete Task\x1aYRemoves a task by id. Safe to retry; returns existed=true if a task was actually removed.(\x010\x01B\xfb\x01\n" +
+	"DeleteTask\x12-.protomcp.examples.tasks.v1.DeleteTaskRequest\x1a..protomcp.examples.tasks.v1.DeleteTaskResponse\"\xa8\x01\x8a\xb5\x18l\x12\vDelete Task\x1aYRemoves a task by id. Safe to retry; returns existed=true if a task was actually removed.(\x010\x01\xb2\xb5\x184\n" +
+	"2Delete task with id {{id}}? This cannot be undone.\x12\xcc\x01\n" +
+	"\x10ListAllResources\x123.protomcp.examples.tasks.v1.ListAllResourcesRequest\x1a4.protomcp.examples.tasks.v1.ListAllResourcesResponse\"M\xa2\xb5\x18I\n" +
+	"\x05items\x12\r{type}://{id}\x1a\f\n" +
+	"\x04type\x12\x04type\x1a\b\n" +
+	"\x02id\x12\x02id\"\b{{name}}*\x0f{{description}}\x12\x8e\x01\n" +
+	"\x14WatchResourceChanges\x127.protomcp.examples.tasks.v1.WatchResourceChangesRequest\x1a5.protomcp.examples.tasks.v1.WatchResourceChangesEvent\"\x04µ\x18\x000\x01\x12\xfd\x01\n" +
+	"\n" +
+	"TaskReview\x12-.protomcp.examples.tasks.v1.TaskReviewRequest\x1a .protomcp.examples.tasks.v1.Task\"\x9d\x01\xaa\xb5\x18\x98\x01\n" +
+	"\ftasks_review\x12\rReview a task\"yReview task {{title}} (ID: {{id}}).\n" +
+	"\n" +
+	"Current status: done={{done}}\n" +
+	"Description: {{description}}\n" +
+	"\n" +
+	"What should happen next?B\xfb\x01\n" +
 	"\x1ecom.protomcp.examples.tasks.v1B\n" +
 	"TasksProtoP\x01ZBgithub.com/gdsoumya/protomcp/pkg/api/gen/examples/tasks/v1;tasksv1\xa2\x02\x03PET\xaa\x02\x1aProtomcp.Examples.Tasks.V1\xca\x02\x1aProtomcp\\Examples\\Tasks\\V1\xe2\x02&Protomcp\\Examples\\Tasks\\V1\\GPBMetadata\xea\x02\x1dProtomcp::Examples::Tasks::V1b\x06proto3"
 
@@ -498,38 +1016,58 @@ func file_examples_tasks_v1_tasks_proto_rawDescGZIP() []byte {
 	return file_examples_tasks_v1_tasks_proto_rawDescData
 }
 
-var file_examples_tasks_v1_tasks_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
+var file_examples_tasks_v1_tasks_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
+var file_examples_tasks_v1_tasks_proto_msgTypes = make([]protoimpl.MessageInfo, 16)
 var file_examples_tasks_v1_tasks_proto_goTypes = []any{
-	(*Task)(nil),                  // 0: protomcp.examples.tasks.v1.Task
-	(*ListTasksRequest)(nil),      // 1: protomcp.examples.tasks.v1.ListTasksRequest
-	(*ListTasksResponse)(nil),     // 2: protomcp.examples.tasks.v1.ListTasksResponse
-	(*GetTaskRequest)(nil),        // 3: protomcp.examples.tasks.v1.GetTaskRequest
-	(*CreateTaskRequest)(nil),     // 4: protomcp.examples.tasks.v1.CreateTaskRequest
-	(*UpdateTaskRequest)(nil),     // 5: protomcp.examples.tasks.v1.UpdateTaskRequest
-	(*DeleteTaskRequest)(nil),     // 6: protomcp.examples.tasks.v1.DeleteTaskRequest
-	(*DeleteTaskResponse)(nil),    // 7: protomcp.examples.tasks.v1.DeleteTaskResponse
-	(*timestamppb.Timestamp)(nil), // 8: google.protobuf.Timestamp
+	(TaskStatus)(0),                     // 0: protomcp.examples.tasks.v1.TaskStatus
+	(*Task)(nil),                        // 1: protomcp.examples.tasks.v1.Task
+	(*Tag)(nil),                         // 2: protomcp.examples.tasks.v1.Tag
+	(*ListTasksRequest)(nil),            // 3: protomcp.examples.tasks.v1.ListTasksRequest
+	(*ListTasksResponse)(nil),           // 4: protomcp.examples.tasks.v1.ListTasksResponse
+	(*GetTaskRequest)(nil),              // 5: protomcp.examples.tasks.v1.GetTaskRequest
+	(*GetTagRequest)(nil),               // 6: protomcp.examples.tasks.v1.GetTagRequest
+	(*CreateTaskRequest)(nil),           // 7: protomcp.examples.tasks.v1.CreateTaskRequest
+	(*UpdateTaskRequest)(nil),           // 8: protomcp.examples.tasks.v1.UpdateTaskRequest
+	(*DeleteTaskRequest)(nil),           // 9: protomcp.examples.tasks.v1.DeleteTaskRequest
+	(*DeleteTaskResponse)(nil),          // 10: protomcp.examples.tasks.v1.DeleteTaskResponse
+	(*ListAllResourcesRequest)(nil),     // 11: protomcp.examples.tasks.v1.ListAllResourcesRequest
+	(*ListAllResourcesResponse)(nil),    // 12: protomcp.examples.tasks.v1.ListAllResourcesResponse
+	(*ResourceItem)(nil),                // 13: protomcp.examples.tasks.v1.ResourceItem
+	(*WatchResourceChangesRequest)(nil), // 14: protomcp.examples.tasks.v1.WatchResourceChangesRequest
+	(*WatchResourceChangesEvent)(nil),   // 15: protomcp.examples.tasks.v1.WatchResourceChangesEvent
+	(*TaskReviewRequest)(nil),           // 16: protomcp.examples.tasks.v1.TaskReviewRequest
+	(*timestamppb.Timestamp)(nil),       // 17: google.protobuf.Timestamp
 }
 var file_examples_tasks_v1_tasks_proto_depIdxs = []int32{
-	8, // 0: protomcp.examples.tasks.v1.Task.created_at:type_name -> google.protobuf.Timestamp
-	8, // 1: protomcp.examples.tasks.v1.Task.updated_at:type_name -> google.protobuf.Timestamp
-	0, // 2: protomcp.examples.tasks.v1.ListTasksResponse.tasks:type_name -> protomcp.examples.tasks.v1.Task
-	0, // 3: protomcp.examples.tasks.v1.CreateTaskRequest.task:type_name -> protomcp.examples.tasks.v1.Task
-	1, // 4: protomcp.examples.tasks.v1.Tasks.ListTasks:input_type -> protomcp.examples.tasks.v1.ListTasksRequest
-	3, // 5: protomcp.examples.tasks.v1.Tasks.GetTask:input_type -> protomcp.examples.tasks.v1.GetTaskRequest
-	4, // 6: protomcp.examples.tasks.v1.Tasks.CreateTask:input_type -> protomcp.examples.tasks.v1.CreateTaskRequest
-	5, // 7: protomcp.examples.tasks.v1.Tasks.UpdateTask:input_type -> protomcp.examples.tasks.v1.UpdateTaskRequest
-	6, // 8: protomcp.examples.tasks.v1.Tasks.DeleteTask:input_type -> protomcp.examples.tasks.v1.DeleteTaskRequest
-	2, // 9: protomcp.examples.tasks.v1.Tasks.ListTasks:output_type -> protomcp.examples.tasks.v1.ListTasksResponse
-	0, // 10: protomcp.examples.tasks.v1.Tasks.GetTask:output_type -> protomcp.examples.tasks.v1.Task
-	0, // 11: protomcp.examples.tasks.v1.Tasks.CreateTask:output_type -> protomcp.examples.tasks.v1.Task
-	0, // 12: protomcp.examples.tasks.v1.Tasks.UpdateTask:output_type -> protomcp.examples.tasks.v1.Task
-	7, // 13: protomcp.examples.tasks.v1.Tasks.DeleteTask:output_type -> protomcp.examples.tasks.v1.DeleteTaskResponse
-	9, // [9:14] is the sub-list for method output_type
-	4, // [4:9] is the sub-list for method input_type
-	4, // [4:4] is the sub-list for extension type_name
-	4, // [4:4] is the sub-list for extension extendee
-	0, // [0:4] is the sub-list for field type_name
+	17, // 0: protomcp.examples.tasks.v1.Task.created_at:type_name -> google.protobuf.Timestamp
+	17, // 1: protomcp.examples.tasks.v1.Task.updated_at:type_name -> google.protobuf.Timestamp
+	0,  // 2: protomcp.examples.tasks.v1.Task.status:type_name -> protomcp.examples.tasks.v1.TaskStatus
+	1,  // 3: protomcp.examples.tasks.v1.ListTasksResponse.tasks:type_name -> protomcp.examples.tasks.v1.Task
+	1,  // 4: protomcp.examples.tasks.v1.CreateTaskRequest.task:type_name -> protomcp.examples.tasks.v1.Task
+	13, // 5: protomcp.examples.tasks.v1.ListAllResourcesResponse.items:type_name -> protomcp.examples.tasks.v1.ResourceItem
+	3,  // 6: protomcp.examples.tasks.v1.Tasks.ListTasks:input_type -> protomcp.examples.tasks.v1.ListTasksRequest
+	5,  // 7: protomcp.examples.tasks.v1.Tasks.GetTask:input_type -> protomcp.examples.tasks.v1.GetTaskRequest
+	6,  // 8: protomcp.examples.tasks.v1.Tasks.GetTag:input_type -> protomcp.examples.tasks.v1.GetTagRequest
+	7,  // 9: protomcp.examples.tasks.v1.Tasks.CreateTask:input_type -> protomcp.examples.tasks.v1.CreateTaskRequest
+	8,  // 10: protomcp.examples.tasks.v1.Tasks.UpdateTask:input_type -> protomcp.examples.tasks.v1.UpdateTaskRequest
+	9,  // 11: protomcp.examples.tasks.v1.Tasks.DeleteTask:input_type -> protomcp.examples.tasks.v1.DeleteTaskRequest
+	11, // 12: protomcp.examples.tasks.v1.Tasks.ListAllResources:input_type -> protomcp.examples.tasks.v1.ListAllResourcesRequest
+	14, // 13: protomcp.examples.tasks.v1.Tasks.WatchResourceChanges:input_type -> protomcp.examples.tasks.v1.WatchResourceChangesRequest
+	16, // 14: protomcp.examples.tasks.v1.Tasks.TaskReview:input_type -> protomcp.examples.tasks.v1.TaskReviewRequest
+	4,  // 15: protomcp.examples.tasks.v1.Tasks.ListTasks:output_type -> protomcp.examples.tasks.v1.ListTasksResponse
+	1,  // 16: protomcp.examples.tasks.v1.Tasks.GetTask:output_type -> protomcp.examples.tasks.v1.Task
+	2,  // 17: protomcp.examples.tasks.v1.Tasks.GetTag:output_type -> protomcp.examples.tasks.v1.Tag
+	1,  // 18: protomcp.examples.tasks.v1.Tasks.CreateTask:output_type -> protomcp.examples.tasks.v1.Task
+	1,  // 19: protomcp.examples.tasks.v1.Tasks.UpdateTask:output_type -> protomcp.examples.tasks.v1.Task
+	10, // 20: protomcp.examples.tasks.v1.Tasks.DeleteTask:output_type -> protomcp.examples.tasks.v1.DeleteTaskResponse
+	12, // 21: protomcp.examples.tasks.v1.Tasks.ListAllResources:output_type -> protomcp.examples.tasks.v1.ListAllResourcesResponse
+	15, // 22: protomcp.examples.tasks.v1.Tasks.WatchResourceChanges:output_type -> protomcp.examples.tasks.v1.WatchResourceChangesEvent
+	1,  // 23: protomcp.examples.tasks.v1.Tasks.TaskReview:output_type -> protomcp.examples.tasks.v1.Task
+	15, // [15:24] is the sub-list for method output_type
+	6,  // [6:15] is the sub-list for method input_type
+	6,  // [6:6] is the sub-list for extension type_name
+	6,  // [6:6] is the sub-list for extension extendee
+	0,  // [0:6] is the sub-list for field type_name
 }
 
 func init() { file_examples_tasks_v1_tasks_proto_init() }
@@ -542,13 +1080,14 @@ func file_examples_tasks_v1_tasks_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_examples_tasks_v1_tasks_proto_rawDesc), len(file_examples_tasks_v1_tasks_proto_rawDesc)),
-			NumEnums:      0,
-			NumMessages:   8,
+			NumEnums:      1,
+			NumMessages:   16,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
 		GoTypes:           file_examples_tasks_v1_tasks_proto_goTypes,
 		DependencyIndexes: file_examples_tasks_v1_tasks_proto_depIdxs,
+		EnumInfos:         file_examples_tasks_v1_tasks_proto_enumTypes,
 		MessageInfos:      file_examples_tasks_v1_tasks_proto_msgTypes,
 	}.Build()
 	File_examples_tasks_v1_tasks_proto = out.File

@@ -53,7 +53,7 @@ type GreeterClient interface {
 	// context cancellation propagates through the SDK into the server.
 	// Returns DeadlineExceeded / Canceled based on ctx.Err().
 	Slow(ctx context.Context, in *HelloRequest, opts ...grpc.CallOption) (*HelloReply, error)
-	// Internal is intentionally unannotated — it must not be generated.
+	// Internal is intentionally unannotated, it must not be generated.
 	Internal(ctx context.Context, in *HelloRequest, opts ...grpc.CallOption) (*HelloReply, error)
 }
 
@@ -160,7 +160,7 @@ type GreeterServer interface {
 	// context cancellation propagates through the SDK into the server.
 	// Returns DeadlineExceeded / Canceled based on ctx.Err().
 	Slow(context.Context, *HelloRequest) (*HelloReply, error)
-	// Internal is intentionally unannotated — it must not be generated.
+	// Internal is intentionally unannotated, it must not be generated.
 	Internal(context.Context, *HelloRequest) (*HelloReply, error)
 	mustEmbedUnimplementedGreeterServer()
 }

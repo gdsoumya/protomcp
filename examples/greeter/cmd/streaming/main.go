@@ -66,7 +66,7 @@ func run(ctx context.Context, name string, turns int) error {
 	srv := protomcp.New("streaming-demo", "0.1.0")
 	greeterv1.RegisterGreeterMCPTools(srv, grpcClient)
 
-	// In-memory client/server transports — no sockets, no ports.
+	// In-memory client/server transports, no sockets, no ports.
 	cT, sT := mcp.NewInMemoryTransports()
 	ss, err := srv.SDK().Connect(ctx, sT, nil)
 	if err != nil {
@@ -104,7 +104,7 @@ func run(ctx context.Context, name string, turns int) error {
 			"turns": turns,
 		},
 		// ProgressToken signals we want progress notifications for
-		// this call — the generated server-streaming handler keys
+		// this call, the generated server-streaming handler keys
 		// NotifyProgress off it.
 		Meta: mcp.Meta{"progressToken": "streaming-demo"},
 	})
@@ -115,7 +115,7 @@ func run(ctx context.Context, name string, turns int) error {
 		return fmt.Errorf("tool returned IsError: %+v", result)
 	}
 
-	// Progress notifications are async — wait briefly for the tail.
+	// Progress notifications are async, wait briefly for the tail.
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
 		mu.Lock()

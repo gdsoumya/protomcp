@@ -1,5 +1,5 @@
-// Tests that exercise the two newer seams — input mutation via
-// GRPCRequest.Input and response redaction via ResultProcessor — through
+// Tests that exercise the two newer seams, input mutation via
+// GRPCData.Input and response redaction via ResultProcessor, through
 // a full end-to-end tool call against the real gRPC server.
 package greeter_test
 
@@ -16,13 +16,13 @@ import (
 )
 
 // TestMiddleware_MutatesGRPCInput verifies a Middleware that rewrites
-// the Name field of HelloRequest via g.Input — the rewritten value is
+// the Name field of HelloRequest via g.Input, the rewritten value is
 // what reaches the gRPC server and shows up in the echoed response.
 func TestMiddleware_MutatesGRPCInput(t *testing.T) {
 	grpcClient := startGRPC(t)
 
-	rewrite := func(next protomcp.Handler) protomcp.Handler {
-		return func(ctx context.Context, req *mcp.CallToolRequest, g *protomcp.GRPCRequest) (*mcp.CallToolResult, error) {
+	rewrite := func(next protomcp.ToolHandler) protomcp.ToolHandler {
+		return func(ctx context.Context, req *mcp.CallToolRequest, g *protomcp.GRPCData) (*mcp.CallToolResult, error) {
 			if r, ok := g.Input.(*greeterv1.HelloRequest); ok {
 				r.Name = "middleware-" + r.Name
 			}
@@ -30,7 +30,7 @@ func TestMiddleware_MutatesGRPCInput(t *testing.T) {
 		}
 	}
 
-	srv := protomcp.New("greeter", "0.1.0", protomcp.WithMiddleware(rewrite))
+	srv := protomcp.New("greeter", "0.1.0", protomcp.WithToolMiddleware(rewrite))
 	greeterv1.RegisterGreeterMCPTools(srv, grpcClient)
 	cs := connect(context.Background(), t, srv, nil)
 
@@ -53,21 +53,21 @@ func TestMiddleware_MutatesGRPCInput(t *testing.T) {
 
 // TestMiddleware_ReplacesGRPCInputPointer verifies that a Middleware
 // which swaps g.Input for an entirely different message pointer is
-// honored — the replacement is what reaches the gRPC server, not the
+// honored, the replacement is what reaches the gRPC server, not the
 // originally-unmarshaled message. This exercises the g.Input read
 // path on the generated handler (vs. a closure-captured &in which
 // would silently ignore the swap).
 func TestMiddleware_ReplacesGRPCInputPointer(t *testing.T) {
 	grpcClient := startGRPC(t)
 
-	swap := func(next protomcp.Handler) protomcp.Handler {
-		return func(ctx context.Context, req *mcp.CallToolRequest, g *protomcp.GRPCRequest) (*mcp.CallToolResult, error) {
+	swap := func(next protomcp.ToolHandler) protomcp.ToolHandler {
+		return func(ctx context.Context, req *mcp.CallToolRequest, g *protomcp.GRPCData) (*mcp.CallToolResult, error) {
 			g.Input = &greeterv1.HelloRequest{Name: "swapped"}
 			return next(ctx, req, g)
 		}
 	}
 
-	srv := protomcp.New("greeter", "0.1.0", protomcp.WithMiddleware(swap))
+	srv := protomcp.New("greeter", "0.1.0", protomcp.WithToolMiddleware(swap))
 	greeterv1.RegisterGreeterMCPTools(srv, grpcClient)
 	cs := connect(context.Background(), t, srv, nil)
 
@@ -89,12 +89,13 @@ func TestMiddleware_ReplacesGRPCInputPointer(t *testing.T) {
 }
 
 // TestResultProcessor_RedactsResponse verifies a ResultProcessor
-// mutates the TextContent payload before the client observes it —
+// mutates the TextContent payload before the client observes it ,
 // a canonical "scrub a field from the response" use case.
 func TestResultProcessor_RedactsResponse(t *testing.T) {
 	grpcClient := startGRPC(t)
 
-	redact := func(_ context.Context, _ *mcp.CallToolRequest, r *mcp.CallToolResult) (*mcp.CallToolResult, error) {
+	redact := func(_ context.Context, _ *protomcp.GRPCData, data *protomcp.MCPData[*mcp.CallToolRequest, *mcp.CallToolResult]) (*mcp.CallToolResult, error) {
+		r := data.Output
 		for _, c := range r.Content {
 			if tc, ok := c.(*mcp.TextContent); ok {
 				tc.Text = strings.ReplaceAll(tc.Text, "Hello", "[redacted]")
@@ -103,7 +104,7 @@ func TestResultProcessor_RedactsResponse(t *testing.T) {
 		return r, nil
 	}
 
-	srv := protomcp.New("greeter", "0.1.0", protomcp.WithResultProcessor(redact))
+	srv := protomcp.New("greeter", "0.1.0", protomcp.WithToolResultProcessor(redact))
 	greeterv1.RegisterGreeterMCPTools(srv, grpcClient)
 	cs := connect(context.Background(), t, srv, nil)
 

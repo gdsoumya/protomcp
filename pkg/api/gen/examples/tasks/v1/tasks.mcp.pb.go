@@ -7,31 +7,39 @@ import (
 	context "context"
 	json "encoding/json"
 	fmt "fmt"
+	mustache "github.com/cbroglie/mustache"
 	protomcp "github.com/gdsoumya/protomcp/pkg/protomcp"
 	mcp "github.com/modelcontextprotocol/go-sdk/mcp"
+	v3 "github.com/yosida95/uritemplate/v3"
 	metadata "google.golang.org/grpc/metadata"
-	protojson "google.golang.org/protobuf/encoding/protojson"
 )
 
 var _Tasks_ListTasks_InputSchema = protomcp.MustParseSchema(`{"properties":{},"type":"object"}`)
-var _Tasks_ListTasks_OutputSchema = protomcp.MustParseSchema(`{"properties":{"tasks":{"items":{"properties":{"createdAt":{"format":"date-time","type":["string","null"]},"description":{"type":"string"},"done":{"type":"boolean"},"id":{"type":"string"},"title":{"type":"string"},"updatedAt":{"format":"date-time","type":["string","null"]}},"required":["title"],"type":"object"},"type":"array"}},"type":"object"}`)
+var _Tasks_ListTasks_OutputSchema = protomcp.MustParseSchema(`{"properties":{"tasks":{"items":{"properties":{"createdAt":{"format":"date-time","type":["string","null"]},"description":{"description":"Longer body describing what the task is about.","examples":["2L organic whole milk for the office fridge"],"type":"string"},"done":{"type":"boolean"},"id":{"type":"string"},"status":{"description":"Lifecycle state. See TaskStatus for the per-value meaning.","enum":["TASK_STATUS_UNSPECIFIED","TASK_STATUS_PENDING","TASK_STATUS_IN_PROGRESS","TASK_STATUS_COMPLETED","TASK_STATUS_CANCELLED"],"enumDescriptions":["","Task has been created but no work has started.","Someone is actively working on the task.","Task is done; no further work expected.","Task was abandoned before completion."],"type":"string"},"title":{"description":"Short human-readable title shown in task lists.","examples":["Buy milk","Finish Q2 report"],"type":"string"},"updatedAt":{"format":"date-time","type":["string","null"]}},"required":["title"],"type":"object"},"type":"array"}},"type":"object"}`)
 var _Tasks_GetTask_InputSchema = protomcp.MustParseSchema(`{"properties":{"id":{"type":"string"}},"required":["id"],"type":"object"}`)
-var _Tasks_GetTask_OutputSchema = protomcp.MustParseSchema(`{"properties":{"createdAt":{"format":"date-time","type":["string","null"]},"description":{"type":"string"},"done":{"type":"boolean"},"id":{"type":"string"},"title":{"type":"string"},"updatedAt":{"format":"date-time","type":["string","null"]}},"required":["title"],"type":"object"}`)
-var _Tasks_CreateTask_InputSchema = protomcp.MustParseSchema(`{"properties":{"task":{"description":"task.id and task.{created,updated}_at are OUTPUT_ONLY on Task and\nare therefore stripped from this request's advertised input schema.","properties":{"description":{"type":"string"},"done":{"type":"boolean"},"title":{"type":"string"}},"required":["title"],"type":"object"}},"required":["task"],"type":"object"}`)
-var _Tasks_CreateTask_OutputSchema = protomcp.MustParseSchema(`{"properties":{"createdAt":{"format":"date-time","type":["string","null"]},"description":{"type":"string"},"done":{"type":"boolean"},"id":{"type":"string"},"title":{"type":"string"},"updatedAt":{"format":"date-time","type":["string","null"]}},"required":["title"],"type":"object"}`)
+var _Tasks_GetTask_OutputSchema = protomcp.MustParseSchema(`{"properties":{"createdAt":{"format":"date-time","type":["string","null"]},"description":{"description":"Longer body describing what the task is about.","examples":["2L organic whole milk for the office fridge"],"type":"string"},"done":{"type":"boolean"},"id":{"type":"string"},"status":{"description":"Lifecycle state. See TaskStatus for the per-value meaning.","enum":["TASK_STATUS_UNSPECIFIED","TASK_STATUS_PENDING","TASK_STATUS_IN_PROGRESS","TASK_STATUS_COMPLETED","TASK_STATUS_CANCELLED"],"enumDescriptions":["","Task has been created but no work has started.","Someone is actively working on the task.","Task is done; no further work expected.","Task was abandoned before completion."],"type":"string"},"title":{"description":"Short human-readable title shown in task lists.","examples":["Buy milk","Finish Q2 report"],"type":"string"},"updatedAt":{"format":"date-time","type":["string","null"]}},"required":["title"],"type":"object"}`)
+var _Tasks_CreateTask_InputSchema = protomcp.MustParseSchema(`{"properties":{"task":{"description":"task.id and task.{created,updated}_at are OUTPUT_ONLY on Task and\nare therefore stripped from this request's advertised input schema.","properties":{"description":{"description":"Longer body describing what the task is about.","examples":["2L organic whole milk for the office fridge"],"type":"string"},"done":{"type":"boolean"},"status":{"description":"Lifecycle state. See TaskStatus for the per-value meaning.","enum":["TASK_STATUS_UNSPECIFIED","TASK_STATUS_PENDING","TASK_STATUS_IN_PROGRESS","TASK_STATUS_COMPLETED","TASK_STATUS_CANCELLED"],"enumDescriptions":["","Task has been created but no work has started.","Someone is actively working on the task.","Task is done; no further work expected.","Task was abandoned before completion."],"type":"string"},"title":{"description":"Short human-readable title shown in task lists.","examples":["Buy milk","Finish Q2 report"],"type":"string"}},"required":["title"],"type":"object"}},"required":["task"],"type":"object"}`)
+var _Tasks_CreateTask_OutputSchema = protomcp.MustParseSchema(`{"properties":{"createdAt":{"format":"date-time","type":["string","null"]},"description":{"description":"Longer body describing what the task is about.","examples":["2L organic whole milk for the office fridge"],"type":"string"},"done":{"type":"boolean"},"id":{"type":"string"},"status":{"description":"Lifecycle state. See TaskStatus for the per-value meaning.","enum":["TASK_STATUS_UNSPECIFIED","TASK_STATUS_PENDING","TASK_STATUS_IN_PROGRESS","TASK_STATUS_COMPLETED","TASK_STATUS_CANCELLED"],"enumDescriptions":["","Task has been created but no work has started.","Someone is actively working on the task.","Task is done; no further work expected.","Task was abandoned before completion."],"type":"string"},"title":{"description":"Short human-readable title shown in task lists.","examples":["Buy milk","Finish Q2 report"],"type":"string"},"updatedAt":{"format":"date-time","type":["string","null"]}},"required":["title"],"type":"object"}`)
 var _Tasks_UpdateTask_InputSchema = protomcp.MustParseSchema(`{"properties":{"description":{"type":"string"},"done":{"type":"boolean"},"id":{"type":"string"},"title":{"type":"string"}},"required":["id","title"],"type":"object"}`)
-var _Tasks_UpdateTask_OutputSchema = protomcp.MustParseSchema(`{"properties":{"createdAt":{"format":"date-time","type":["string","null"]},"description":{"type":"string"},"done":{"type":"boolean"},"id":{"type":"string"},"title":{"type":"string"},"updatedAt":{"format":"date-time","type":["string","null"]}},"required":["title"],"type":"object"}`)
+var _Tasks_UpdateTask_OutputSchema = protomcp.MustParseSchema(`{"properties":{"createdAt":{"format":"date-time","type":["string","null"]},"description":{"description":"Longer body describing what the task is about.","examples":["2L organic whole milk for the office fridge"],"type":"string"},"done":{"type":"boolean"},"id":{"type":"string"},"status":{"description":"Lifecycle state. See TaskStatus for the per-value meaning.","enum":["TASK_STATUS_UNSPECIFIED","TASK_STATUS_PENDING","TASK_STATUS_IN_PROGRESS","TASK_STATUS_COMPLETED","TASK_STATUS_CANCELLED"],"enumDescriptions":["","Task has been created but no work has started.","Someone is actively working on the task.","Task is done; no further work expected.","Task was abandoned before completion."],"type":"string"},"title":{"description":"Short human-readable title shown in task lists.","examples":["Buy milk","Finish Q2 report"],"type":"string"},"updatedAt":{"format":"date-time","type":["string","null"]}},"required":["title"],"type":"object"}`)
 var _Tasks_DeleteTask_InputSchema = protomcp.MustParseSchema(`{"properties":{"id":{"type":"string"}},"required":["id"],"type":"object"}`)
-var _Tasks_DeleteTask_OutputSchema = protomcp.MustParseSchema(`{"properties":{"existed":{"description":"existed is true when a task with the given id was actually removed;\nfalse means the id did not exist (still a successful response — the\noperation is idempotent).","type":"boolean"}},"type":"object"}`)
+var _Tasks_DeleteTask_OutputSchema = protomcp.MustParseSchema(`{"properties":{"existed":{"description":"existed is true when a task with the given id was actually removed;\nfalse means the id did not exist (still a successful response, the\noperation is idempotent).","type":"boolean"}},"type":"object"}`)
 
-// Tasks is a CRUD gRPC service used to demonstrate protomcp's handling of
-// MCP tool hint annotations (read_only, idempotent, destructive) and the
-// OUTPUT_ONLY field-behavior stripping on input schemas.
+var _protomcp_URITemplate_0 = v3.MustNew("tasks://{id}")
+var _protomcp_URITemplate_1 = v3.MustNew("tags://{id}")
+var _protomcp_URITemplate_2 = v3.MustNew("{type}://{id}")
+
+// Tasks is a CRUD gRPC service used to demonstrate protomcp's handling
+// of MCP tool hint annotations (read_only, idempotent, destructive),
+// OUTPUT_ONLY field-behavior stripping on input schemas, resource
+// templates for two distinct resource types (tasks://{id} and
+// tags://{id}), and a single `resource_list` RPC that enumerates both
+// types through a templated URI scheme.
 //
-// Clients see CRUD tools whose input schemas hide server-computed fields
-// (id, timestamps) while still receiving them in responses; the LLM
-// client can use read_only / idempotent / destructive hints to decide
-// how aggressively to retry or confirm an action.
+// Clients see CRUD tools whose input schemas hide server-computed
+// fields (id, timestamps) while still receiving them in responses; the
+// LLM client can use read_only / idempotent / destructive hints to
+// decide how aggressively to retry or confirm an action.
 //
 // RegisterTasksMCPTools registers every annotated RPC on the service as an
 // MCP tool on srv, dispatching to the supplied gRPC client.
@@ -46,33 +54,34 @@ func RegisterTasksMCPTools(srv *protomcp.Server, client TasksClient) {
 		Annotations:  &mcp.ToolAnnotations{ReadOnlyHint: true},
 	}, func(ctx context.Context, req *mcp.CallToolRequest, raw json.RawMessage) (*mcp.CallToolResult, any, error) {
 		var in ListTasksRequest
-		if err := protojson.Unmarshal(raw, &in); err != nil {
-			return srv.FinishCall(ctx, req, nil, fmt.Errorf("invalid arguments: %w", err))
+		if err := srv.UnmarshalProto(raw, &in); err != nil {
+			return srv.FinishToolCall(ctx, req, nil, nil, fmt.Errorf("invalid arguments: %w", err))
 		}
-		// protojson unmarshaled whatever the client sent, including any
-		// fields marked google.api.field_behavior = OUTPUT_ONLY — which
-		// the advertised schema hides but the wire format does not
-		// enforce. Clear them so the upstream gRPC server never sees
-		// client-supplied values for server-computed fields.
+		// Clear OUTPUT_ONLY fields: the schema hides them but the
+		// wire format does not, so the upstream gRPC server must
+		// never see client-supplied values for server-computed fields.
 		protomcp.ClearOutputOnly(&in)
-		// Middleware receives &in via GRPCRequest.Input and may either
-		// mutate its fields in place (type-assert or proto-reflect) or
-		// replace the pointer entirely with another message of the same
-		// concrete type. The final handler always reads from g.Input so
-		// both forms propagate to the upstream call.
-		g := &protomcp.GRPCRequest{Input: &in, Metadata: metadata.MD{}}
+		// ToolMiddleware may mutate &in or replace the pointer; the
+		// final handler reads from g.Input so both forms propagate.
+		g := &protomcp.GRPCData{Input: &in, Metadata: metadata.MD{}}
+		// Forward the MCP progress token as a gRPC metadata header so
+		// downstream interceptors can correlate logs and traces.
+		if tok := req.Params.GetProgressToken(); tok != nil {
+			g.Metadata.Set(srv.ProgressTokenHeader(), protomcp.SanitizeMetadataValue(fmt.Sprintf("%v", tok)))
+		}
 
-		final := func(ctx context.Context, _ *mcp.CallToolRequest, g *protomcp.GRPCRequest) (*mcp.CallToolResult, error) {
+		final := func(ctx context.Context, _ *mcp.CallToolRequest, g *protomcp.GRPCData) (*mcp.CallToolResult, error) {
 			ctx = metadata.NewOutgoingContext(ctx, g.Metadata)
 			upstream, ok := g.Input.(*ListTasksRequest)
 			if !ok {
-				return nil, fmt.Errorf("GRPCRequest.Input: want *%s, got %T", "ListTasksRequest", g.Input)
+				return nil, fmt.Errorf("GRPCData.Input: want *%s, got %T", "ListTasksRequest", g.Input)
 			}
 			resp, err := client.ListTasks(ctx, upstream)
 			if err != nil {
 				return nil, err
 			}
-			outBytes, err := protojson.Marshal(resp)
+			g.Output = resp
+			outBytes, err := srv.MarshalProto(resp)
 			if err != nil {
 				return nil, err
 			}
@@ -82,8 +91,8 @@ func RegisterTasksMCPTools(srv *protomcp.Server, client TasksClient) {
 			}, nil
 		}
 
-		result, err := srv.Chain(final)(ctx, req, g)
-		return srv.FinishCall(ctx, req, result, err)
+		result, err := srv.ToolChain(final)(ctx, req, g)
+		return srv.FinishToolCall(ctx, req, g, result, err)
 	})
 
 	mcp.AddTool(srv.SDK(), &mcp.Tool{
@@ -95,33 +104,34 @@ func RegisterTasksMCPTools(srv *protomcp.Server, client TasksClient) {
 		Annotations:  &mcp.ToolAnnotations{ReadOnlyHint: true},
 	}, func(ctx context.Context, req *mcp.CallToolRequest, raw json.RawMessage) (*mcp.CallToolResult, any, error) {
 		var in GetTaskRequest
-		if err := protojson.Unmarshal(raw, &in); err != nil {
-			return srv.FinishCall(ctx, req, nil, fmt.Errorf("invalid arguments: %w", err))
+		if err := srv.UnmarshalProto(raw, &in); err != nil {
+			return srv.FinishToolCall(ctx, req, nil, nil, fmt.Errorf("invalid arguments: %w", err))
 		}
-		// protojson unmarshaled whatever the client sent, including any
-		// fields marked google.api.field_behavior = OUTPUT_ONLY — which
-		// the advertised schema hides but the wire format does not
-		// enforce. Clear them so the upstream gRPC server never sees
-		// client-supplied values for server-computed fields.
+		// Clear OUTPUT_ONLY fields: the schema hides them but the
+		// wire format does not, so the upstream gRPC server must
+		// never see client-supplied values for server-computed fields.
 		protomcp.ClearOutputOnly(&in)
-		// Middleware receives &in via GRPCRequest.Input and may either
-		// mutate its fields in place (type-assert or proto-reflect) or
-		// replace the pointer entirely with another message of the same
-		// concrete type. The final handler always reads from g.Input so
-		// both forms propagate to the upstream call.
-		g := &protomcp.GRPCRequest{Input: &in, Metadata: metadata.MD{}}
+		// ToolMiddleware may mutate &in or replace the pointer; the
+		// final handler reads from g.Input so both forms propagate.
+		g := &protomcp.GRPCData{Input: &in, Metadata: metadata.MD{}}
+		// Forward the MCP progress token as a gRPC metadata header so
+		// downstream interceptors can correlate logs and traces.
+		if tok := req.Params.GetProgressToken(); tok != nil {
+			g.Metadata.Set(srv.ProgressTokenHeader(), protomcp.SanitizeMetadataValue(fmt.Sprintf("%v", tok)))
+		}
 
-		final := func(ctx context.Context, _ *mcp.CallToolRequest, g *protomcp.GRPCRequest) (*mcp.CallToolResult, error) {
+		final := func(ctx context.Context, _ *mcp.CallToolRequest, g *protomcp.GRPCData) (*mcp.CallToolResult, error) {
 			ctx = metadata.NewOutgoingContext(ctx, g.Metadata)
 			upstream, ok := g.Input.(*GetTaskRequest)
 			if !ok {
-				return nil, fmt.Errorf("GRPCRequest.Input: want *%s, got %T", "GetTaskRequest", g.Input)
+				return nil, fmt.Errorf("GRPCData.Input: want *%s, got %T", "GetTaskRequest", g.Input)
 			}
 			resp, err := client.GetTask(ctx, upstream)
 			if err != nil {
 				return nil, err
 			}
-			outBytes, err := protojson.Marshal(resp)
+			g.Output = resp
+			outBytes, err := srv.MarshalProto(resp)
 			if err != nil {
 				return nil, err
 			}
@@ -131,8 +141,8 @@ func RegisterTasksMCPTools(srv *protomcp.Server, client TasksClient) {
 			}, nil
 		}
 
-		result, err := srv.Chain(final)(ctx, req, g)
-		return srv.FinishCall(ctx, req, result, err)
+		result, err := srv.ToolChain(final)(ctx, req, g)
+		return srv.FinishToolCall(ctx, req, g, result, err)
 	})
 
 	mcp.AddTool(srv.SDK(), &mcp.Tool{
@@ -143,33 +153,34 @@ func RegisterTasksMCPTools(srv *protomcp.Server, client TasksClient) {
 		OutputSchema: _Tasks_CreateTask_OutputSchema,
 	}, func(ctx context.Context, req *mcp.CallToolRequest, raw json.RawMessage) (*mcp.CallToolResult, any, error) {
 		var in CreateTaskRequest
-		if err := protojson.Unmarshal(raw, &in); err != nil {
-			return srv.FinishCall(ctx, req, nil, fmt.Errorf("invalid arguments: %w", err))
+		if err := srv.UnmarshalProto(raw, &in); err != nil {
+			return srv.FinishToolCall(ctx, req, nil, nil, fmt.Errorf("invalid arguments: %w", err))
 		}
-		// protojson unmarshaled whatever the client sent, including any
-		// fields marked google.api.field_behavior = OUTPUT_ONLY — which
-		// the advertised schema hides but the wire format does not
-		// enforce. Clear them so the upstream gRPC server never sees
-		// client-supplied values for server-computed fields.
+		// Clear OUTPUT_ONLY fields: the schema hides them but the
+		// wire format does not, so the upstream gRPC server must
+		// never see client-supplied values for server-computed fields.
 		protomcp.ClearOutputOnly(&in)
-		// Middleware receives &in via GRPCRequest.Input and may either
-		// mutate its fields in place (type-assert or proto-reflect) or
-		// replace the pointer entirely with another message of the same
-		// concrete type. The final handler always reads from g.Input so
-		// both forms propagate to the upstream call.
-		g := &protomcp.GRPCRequest{Input: &in, Metadata: metadata.MD{}}
+		// ToolMiddleware may mutate &in or replace the pointer; the
+		// final handler reads from g.Input so both forms propagate.
+		g := &protomcp.GRPCData{Input: &in, Metadata: metadata.MD{}}
+		// Forward the MCP progress token as a gRPC metadata header so
+		// downstream interceptors can correlate logs and traces.
+		if tok := req.Params.GetProgressToken(); tok != nil {
+			g.Metadata.Set(srv.ProgressTokenHeader(), protomcp.SanitizeMetadataValue(fmt.Sprintf("%v", tok)))
+		}
 
-		final := func(ctx context.Context, _ *mcp.CallToolRequest, g *protomcp.GRPCRequest) (*mcp.CallToolResult, error) {
+		final := func(ctx context.Context, _ *mcp.CallToolRequest, g *protomcp.GRPCData) (*mcp.CallToolResult, error) {
 			ctx = metadata.NewOutgoingContext(ctx, g.Metadata)
 			upstream, ok := g.Input.(*CreateTaskRequest)
 			if !ok {
-				return nil, fmt.Errorf("GRPCRequest.Input: want *%s, got %T", "CreateTaskRequest", g.Input)
+				return nil, fmt.Errorf("GRPCData.Input: want *%s, got %T", "CreateTaskRequest", g.Input)
 			}
 			resp, err := client.CreateTask(ctx, upstream)
 			if err != nil {
 				return nil, err
 			}
-			outBytes, err := protojson.Marshal(resp)
+			g.Output = resp
+			outBytes, err := srv.MarshalProto(resp)
 			if err != nil {
 				return nil, err
 			}
@@ -179,8 +190,8 @@ func RegisterTasksMCPTools(srv *protomcp.Server, client TasksClient) {
 			}, nil
 		}
 
-		result, err := srv.Chain(final)(ctx, req, g)
-		return srv.FinishCall(ctx, req, result, err)
+		result, err := srv.ToolChain(final)(ctx, req, g)
+		return srv.FinishToolCall(ctx, req, g, result, err)
 	})
 
 	mcp.AddTool(srv.SDK(), &mcp.Tool{
@@ -192,33 +203,34 @@ func RegisterTasksMCPTools(srv *protomcp.Server, client TasksClient) {
 		Annotations:  &mcp.ToolAnnotations{IdempotentHint: true},
 	}, func(ctx context.Context, req *mcp.CallToolRequest, raw json.RawMessage) (*mcp.CallToolResult, any, error) {
 		var in UpdateTaskRequest
-		if err := protojson.Unmarshal(raw, &in); err != nil {
-			return srv.FinishCall(ctx, req, nil, fmt.Errorf("invalid arguments: %w", err))
+		if err := srv.UnmarshalProto(raw, &in); err != nil {
+			return srv.FinishToolCall(ctx, req, nil, nil, fmt.Errorf("invalid arguments: %w", err))
 		}
-		// protojson unmarshaled whatever the client sent, including any
-		// fields marked google.api.field_behavior = OUTPUT_ONLY — which
-		// the advertised schema hides but the wire format does not
-		// enforce. Clear them so the upstream gRPC server never sees
-		// client-supplied values for server-computed fields.
+		// Clear OUTPUT_ONLY fields: the schema hides them but the
+		// wire format does not, so the upstream gRPC server must
+		// never see client-supplied values for server-computed fields.
 		protomcp.ClearOutputOnly(&in)
-		// Middleware receives &in via GRPCRequest.Input and may either
-		// mutate its fields in place (type-assert or proto-reflect) or
-		// replace the pointer entirely with another message of the same
-		// concrete type. The final handler always reads from g.Input so
-		// both forms propagate to the upstream call.
-		g := &protomcp.GRPCRequest{Input: &in, Metadata: metadata.MD{}}
+		// ToolMiddleware may mutate &in or replace the pointer; the
+		// final handler reads from g.Input so both forms propagate.
+		g := &protomcp.GRPCData{Input: &in, Metadata: metadata.MD{}}
+		// Forward the MCP progress token as a gRPC metadata header so
+		// downstream interceptors can correlate logs and traces.
+		if tok := req.Params.GetProgressToken(); tok != nil {
+			g.Metadata.Set(srv.ProgressTokenHeader(), protomcp.SanitizeMetadataValue(fmt.Sprintf("%v", tok)))
+		}
 
-		final := func(ctx context.Context, _ *mcp.CallToolRequest, g *protomcp.GRPCRequest) (*mcp.CallToolResult, error) {
+		final := func(ctx context.Context, _ *mcp.CallToolRequest, g *protomcp.GRPCData) (*mcp.CallToolResult, error) {
 			ctx = metadata.NewOutgoingContext(ctx, g.Metadata)
 			upstream, ok := g.Input.(*UpdateTaskRequest)
 			if !ok {
-				return nil, fmt.Errorf("GRPCRequest.Input: want *%s, got %T", "UpdateTaskRequest", g.Input)
+				return nil, fmt.Errorf("GRPCData.Input: want *%s, got %T", "UpdateTaskRequest", g.Input)
 			}
 			resp, err := client.UpdateTask(ctx, upstream)
 			if err != nil {
 				return nil, err
 			}
-			outBytes, err := protojson.Marshal(resp)
+			g.Output = resp
+			outBytes, err := srv.MarshalProto(resp)
 			if err != nil {
 				return nil, err
 			}
@@ -228,8 +240,8 @@ func RegisterTasksMCPTools(srv *protomcp.Server, client TasksClient) {
 			}, nil
 		}
 
-		result, err := srv.Chain(final)(ctx, req, g)
-		return srv.FinishCall(ctx, req, result, err)
+		result, err := srv.ToolChain(final)(ctx, req, g)
+		return srv.FinishToolCall(ctx, req, g, result, err)
 	})
 
 	mcp.AddTool(srv.SDK(), &mcp.Tool{
@@ -241,33 +253,51 @@ func RegisterTasksMCPTools(srv *protomcp.Server, client TasksClient) {
 		Annotations:  &mcp.ToolAnnotations{IdempotentHint: true, DestructiveHint: protomcp.BoolPtr(true)},
 	}, func(ctx context.Context, req *mcp.CallToolRequest, raw json.RawMessage) (*mcp.CallToolResult, any, error) {
 		var in DeleteTaskRequest
-		if err := protojson.Unmarshal(raw, &in); err != nil {
-			return srv.FinishCall(ctx, req, nil, fmt.Errorf("invalid arguments: %w", err))
+		if err := srv.UnmarshalProto(raw, &in); err != nil {
+			return srv.FinishToolCall(ctx, req, nil, nil, fmt.Errorf("invalid arguments: %w", err))
 		}
-		// protojson unmarshaled whatever the client sent, including any
-		// fields marked google.api.field_behavior = OUTPUT_ONLY — which
-		// the advertised schema hides but the wire format does not
-		// enforce. Clear them so the upstream gRPC server never sees
-		// client-supplied values for server-computed fields.
+		// Clear OUTPUT_ONLY fields: the schema hides them but the
+		// wire format does not, so the upstream gRPC server must
+		// never see client-supplied values for server-computed fields.
 		protomcp.ClearOutputOnly(&in)
-		// Middleware receives &in via GRPCRequest.Input and may either
-		// mutate its fields in place (type-assert or proto-reflect) or
-		// replace the pointer entirely with another message of the same
-		// concrete type. The final handler always reads from g.Input so
-		// both forms propagate to the upstream call.
-		g := &protomcp.GRPCRequest{Input: &in, Metadata: metadata.MD{}}
+		// ToolMiddleware may mutate &in or replace the pointer; the
+		// final handler reads from g.Input so both forms propagate.
+		g := &protomcp.GRPCData{Input: &in, Metadata: metadata.MD{}}
+		// Forward the MCP progress token as a gRPC metadata header so
+		// downstream interceptors can correlate logs and traces.
+		if tok := req.Params.GetProgressToken(); tok != nil {
+			g.Metadata.Set(srv.ProgressTokenHeader(), protomcp.SanitizeMetadataValue(fmt.Sprintf("%v", tok)))
+		}
+		// Confirm with the client before making the upstream call.
+		// A nil session is tolerated for unit-test harnesses.
+		if req.Session != nil {
+			elicitResult, elicitErr := req.Session.Elicit(ctx, &mcp.ElicitParams{
+				Message: "Delete task with id " + fmt.Sprintf("%v", (&in).GetId()) + "? This cannot be undone.",
+			})
+			if elicitErr != nil {
+				return srv.FinishToolCall(ctx, req, g, nil, elicitErr)
+			}
+			if elicitResult == nil || elicitResult.Action != "accept" {
+				// Explicit refusal; the gRPC call does NOT run.
+				return srv.FinishToolCall(ctx, req, g, &mcp.CallToolResult{
+					IsError: true,
+					Content: []mcp.Content{&mcp.TextContent{Text: "User declined to proceed."}},
+				}, nil)
+			}
+		}
 
-		final := func(ctx context.Context, _ *mcp.CallToolRequest, g *protomcp.GRPCRequest) (*mcp.CallToolResult, error) {
+		final := func(ctx context.Context, _ *mcp.CallToolRequest, g *protomcp.GRPCData) (*mcp.CallToolResult, error) {
 			ctx = metadata.NewOutgoingContext(ctx, g.Metadata)
 			upstream, ok := g.Input.(*DeleteTaskRequest)
 			if !ok {
-				return nil, fmt.Errorf("GRPCRequest.Input: want *%s, got %T", "DeleteTaskRequest", g.Input)
+				return nil, fmt.Errorf("GRPCData.Input: want *%s, got %T", "DeleteTaskRequest", g.Input)
 			}
 			resp, err := client.DeleteTask(ctx, upstream)
 			if err != nil {
 				return nil, err
 			}
-			outBytes, err := protojson.Marshal(resp)
+			g.Output = resp
+			outBytes, err := srv.MarshalProto(resp)
 			if err != nil {
 				return nil, err
 			}
@@ -277,8 +307,293 @@ func RegisterTasksMCPTools(srv *protomcp.Server, client TasksClient) {
 			}, nil
 		}
 
-		result, err := srv.Chain(final)(ctx, req, g)
-		return srv.FinishCall(ctx, req, result, err)
+		result, err := srv.ToolChain(final)(ctx, req, g)
+		return srv.FinishToolCall(ctx, req, g, result, err)
 	})
 
+}
+
+// Tasks is a CRUD gRPC service used to demonstrate protomcp's handling
+// of MCP tool hint annotations (read_only, idempotent, destructive),
+// OUTPUT_ONLY field-behavior stripping on input schemas, resource
+// templates for two distinct resource types (tasks://{id} and
+// tags://{id}), and a single `resource_list` RPC that enumerates both
+// types through a templated URI scheme.
+//
+// Clients see CRUD tools whose input schemas hide server-computed
+// fields (id, timestamps) while still receiving them in responses; the
+// LLM client can use read_only / idempotent / destructive hints to
+// decide how aggressively to retry or confirm an action.
+//
+// RegisterTasksMCPResources wires every resource-annotated RPC on
+// the service into srv. Subscriptions are NOT codegen'd; wire them via
+// mcp.ServerOptions.SubscribeHandler / UnsubscribeHandler through
+// protomcp.WithSDKOptions.
+func RegisterTasksMCPResources(srv *protomcp.Server, client TasksClient) {
+
+	srv.SDK().AddResourceTemplate(&mcp.ResourceTemplate{
+		URITemplate: "tasks://{id}",
+		Name:        "Tasks_GetTask",
+		MIMEType:    "application/json",
+	}, func(ctx context.Context, req *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
+		// A miss here means the SDK and our URI-template regexps
+		// disagree, which is a bug.
+		match := _protomcp_URITemplate_0.Match(req.Params.URI)
+		if match == nil {
+			return nil, fmt.Errorf("protomcp: URI %q does not match template %q", req.Params.URI, "tasks://{id}")
+		}
+		in := &GetTaskRequest{}
+		{
+			val := match.Get("id").String()
+			in.Id = val
+
+		}
+		g := &protomcp.GRPCData{Input: in, Metadata: nil}
+		final := func(ctx context.Context, req *mcp.ReadResourceRequest, g *protomcp.GRPCData) (*mcp.ReadResourceResult, error) {
+			upstream, ok := g.Input.(*GetTaskRequest)
+			if !ok {
+				return nil, fmt.Errorf("protomcp: GRPCData.Input: want *%s, got %T", "GetTaskRequest", g.Input)
+			}
+			resp, err := client.GetTask(ctx, upstream)
+			if err != nil {
+				return nil, err
+			}
+			g.Output = resp
+			contents := &mcp.ResourceContents{
+				URI:      req.Params.URI,
+				MIMEType: "application/json",
+			}
+			payload, mErr := srv.MarshalProto(resp)
+			if mErr != nil {
+				return nil, mErr
+			}
+			contents.Text = string(payload)
+			return &mcp.ReadResourceResult{
+				Contents: []*mcp.ResourceContents{contents},
+			}, nil
+		}
+		result, err := srv.ResourceReadChain(final)(ctx, req, g)
+		return srv.FinishResourceRead(ctx, req, g, result, err)
+	})
+
+	srv.SDK().AddResourceTemplate(&mcp.ResourceTemplate{
+		URITemplate: "tags://{id}",
+		Name:        "Tasks_GetTag",
+		MIMEType:    "application/json",
+	}, func(ctx context.Context, req *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
+		// A miss here means the SDK and our URI-template regexps
+		// disagree, which is a bug.
+		match := _protomcp_URITemplate_1.Match(req.Params.URI)
+		if match == nil {
+			return nil, fmt.Errorf("protomcp: URI %q does not match template %q", req.Params.URI, "tags://{id}")
+		}
+		in := &GetTagRequest{}
+		{
+			val := match.Get("id").String()
+			in.Id = val
+
+		}
+		g := &protomcp.GRPCData{Input: in, Metadata: nil}
+		final := func(ctx context.Context, req *mcp.ReadResourceRequest, g *protomcp.GRPCData) (*mcp.ReadResourceResult, error) {
+			upstream, ok := g.Input.(*GetTagRequest)
+			if !ok {
+				return nil, fmt.Errorf("protomcp: GRPCData.Input: want *%s, got %T", "GetTagRequest", g.Input)
+			}
+			resp, err := client.GetTag(ctx, upstream)
+			if err != nil {
+				return nil, err
+			}
+			g.Output = resp
+			contents := &mcp.ResourceContents{
+				URI:      req.Params.URI,
+				MIMEType: "application/json",
+			}
+			payload, mErr := srv.MarshalProto(resp)
+			if mErr != nil {
+				return nil, mErr
+			}
+			contents.Text = string(payload)
+			return &mcp.ReadResourceResult{
+				Contents: []*mcp.ResourceContents{contents},
+			}, nil
+		}
+		result, err := srv.ResourceReadChain(final)(ctx, req, g)
+		return srv.FinishResourceRead(ctx, req, g, result, err)
+	})
+
+	{
+		list := func(ctx context.Context, req *mcp.ListResourcesRequest, g *protomcp.GRPCData) (*mcp.ListResourcesResult, error) {
+			upstream, ok := g.Input.(*ListAllResourcesRequest)
+			if !ok {
+				return nil, fmt.Errorf("protomcp: GRPCData.Input: want *%s, got %T", "ListAllResourcesRequest", g.Input)
+			}
+			resp, err := client.ListAllResources(ctx, upstream)
+			if err != nil {
+				return nil, err
+			}
+			g.Output = resp
+			items := resp.GetItems()
+			out := &mcp.ListResourcesResult{Resources: make([]*mcp.Resource, 0, len(items))}
+			for _, item := range items {
+				_ = item
+				values := v3.Values{}
+				values["type"] = v3.String(item.GetType())
+				values["id"] = v3.String(item.GetId())
+				uri, expandErr := _protomcp_URITemplate_2.Expand(values)
+				if expandErr != nil {
+					return nil, expandErr
+				}
+				// Mustache resolves variables by protojson camelCase
+				// names for consistency with tool / resource surfaces.
+				itemJSON, iErr := srv.MarshalProto(item)
+				if iErr != nil {
+					return nil, fmt.Errorf("protomcp: marshal item for %q: %w", uri, iErr)
+				}
+				var itemMap map[string]any
+				if jErr := json.Unmarshal(itemJSON, &itemMap); jErr != nil {
+					return nil, fmt.Errorf("protomcp: unmarshal item for %q: %w", uri, jErr)
+				}
+				nameText, rErr := mustache.Render(`{{name}}`, itemMap)
+				if rErr != nil {
+					return nil, fmt.Errorf("protomcp: render name_field for %q: %w", uri, rErr)
+				}
+				r := &mcp.Resource{URI: uri, Name: nameText, MIMEType: "application/json"}
+				descText, dErr := mustache.Render(`{{description}}`, itemMap)
+				if dErr != nil {
+					return nil, fmt.Errorf("protomcp: render description_field for %q: %w", uri, dErr)
+				}
+				r.Description = descText
+				out.Resources = append(out.Resources, r)
+			}
+			return out, nil
+		}
+		srv.RegisterResourceLister(func(ctx context.Context, req *mcp.ListResourcesRequest) (*mcp.ListResourcesResult, error) {
+			in := &ListAllResourcesRequest{}
+			g := &protomcp.GRPCData{Input: in, Metadata: metadata.MD{}}
+			result, err := srv.ResourceListChain(list)(ctx, req, g)
+			return srv.FinishResourceList(ctx, req, g, result, err)
+		})
+	}
+
+}
+
+// Tasks is a CRUD gRPC service used to demonstrate protomcp's handling
+// of MCP tool hint annotations (read_only, idempotent, destructive),
+// OUTPUT_ONLY field-behavior stripping on input schemas, resource
+// templates for two distinct resource types (tasks://{id} and
+// tags://{id}), and a single `resource_list` RPC that enumerates both
+// types through a templated URI scheme.
+//
+// Clients see CRUD tools whose input schemas hide server-computed
+// fields (id, timestamps) while still receiving them in responses; the
+// LLM client can use read_only / idempotent / destructive hints to
+// decide how aggressively to retry or confirm an action.
+//
+// RegisterTasksMCPPrompts registers every annotated RPC on the service
+// as an MCP prompt on srv, dispatching to the supplied gRPC client. For
+// prompts whose arguments have compile-time-known value sets (enum values,
+// buf.validate.string.in), a completion/complete handler is also wired up.
+func RegisterTasksMCPPrompts(srv *protomcp.Server, client TasksClient) {
+
+	srv.SDK().AddPrompt(&mcp.Prompt{
+		Name:        "tasks_review",
+		Title:       "Review a task",
+		Description: "TaskReview surfaces a single task as an MCP prompt. It simply loads\nthe task by id (reusing GetTask semantics) and renders a Mustache\ntemplate against the response, producing one user-role PromptMessage\nthe LLM client can use to kick off a review conversation.",
+		Arguments: []*mcp.PromptArgument{
+			{
+				Name:     "id",
+				Required: true,
+			},
+		},
+	}, func(ctx context.Context, req *mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
+		// Arguments is map[string]string per MCP spec; required-arg
+		// validation happens in the SDK against Prompt.Arguments above.
+		in := &TaskReviewRequest{}
+		args := map[string]string{}
+		if req != nil && req.Params != nil {
+			args = req.Params.Arguments
+		}
+
+		if v, ok := args["id"]; ok {
+			in.Id = v
+		}
+		g := &protomcp.GRPCData{Input: in, Metadata: metadata.MD{}}
+		final := func(ctx context.Context, req *mcp.GetPromptRequest, g *protomcp.GRPCData) (*mcp.GetPromptResult, error) {
+			ctx = metadata.NewOutgoingContext(ctx, g.Metadata)
+			upstream, ok := g.Input.(*TaskReviewRequest)
+			if !ok {
+				return nil, fmt.Errorf("GRPCData.Input: want *%s, got %T", "TaskReviewRequest", g.Input)
+			}
+			resp, err := client.TaskReview(ctx, upstream)
+			if err != nil {
+				return nil, err
+			}
+			g.Output = resp
+			// The Server's protojson.MarshalOptions (default
+			// EmitDefaultValues=true) controls how zero-valued
+			// scalars appear in the template context; see
+			// WithProtoJSONMarshal.
+			payload, mErr := srv.MarshalProto(resp)
+			if mErr != nil {
+				return nil, mErr
+			}
+			var ctxMap map[string]any
+			if uErr := json.Unmarshal(payload, &ctxMap); uErr != nil {
+				return nil, uErr
+			}
+			rendered, rErr := mustache.Render(`Review task {{title}} (ID: {{id}}).
+
+Current status: done={{done}}
+Description: {{description}}
+
+What should happen next?`, ctxMap)
+			if rErr != nil {
+				return nil, fmt.Errorf("render prompt template: %w", rErr)
+			}
+			return &mcp.GetPromptResult{
+				Description: "TaskReview surfaces a single task as an MCP prompt. It simply loads\nthe task by id (reusing GetTask semantics) and renders a Mustache\ntemplate against the response, producing one user-role PromptMessage\nthe LLM client can use to kick off a review conversation.",
+				Messages: []*mcp.PromptMessage{
+					{Role: "user", Content: &mcp.TextContent{Text: rendered}},
+				},
+			}, nil
+		}
+		result, err := srv.PromptChain(final)(ctx, req, g)
+		return srv.FinishPromptGet(ctx, req, g, result, err)
+	})
+
+}
+
+// Tasks is a CRUD gRPC service used to demonstrate protomcp's handling
+// of MCP tool hint annotations (read_only, idempotent, destructive),
+// OUTPUT_ONLY field-behavior stripping on input schemas, resource
+// templates for two distinct resource types (tasks://{id} and
+// tags://{id}), and a single `resource_list` RPC that enumerates both
+// types through a templated URI scheme.
+//
+// Clients see CRUD tools whose input schemas hide server-computed
+// fields (id, timestamps) while still receiving them in responses; the
+// LLM client can use read_only / idempotent / destructive hints to
+// decide how aggressively to retry or confirm an action.
+//
+// StartTasksMCPResourceListChangedWatchers starts one goroutine per
+// protomcp.v1.resource_list_changed annotation. Each opens the
+// annotated server-streaming RPC and fires
+// srv.NotifyResourceListChanged() on every received event. Streams
+// reconnect with exponential backoff; watchers exit when ctx is
+// canceled. Call AFTER RegisterTasksMCPResources.
+func StartTasksMCPResourceListChangedWatchers(ctx context.Context, srv *protomcp.Server, client TasksClient) {
+	go protomcp.RetryLoop(ctx, func(ctx context.Context, reset func()) error {
+		// Messages on WatchResourceChanges are bare triggers; content ignored.
+		stream, err := client.WatchResourceChanges(ctx, &WatchResourceChangesRequest{})
+		if err != nil {
+			return err
+		}
+		for {
+			if _, rerr := stream.Recv(); rerr != nil {
+				return rerr
+			}
+			reset()
+			srv.NotifyResourceListChanged()
+		}
+	})
 }

@@ -167,7 +167,7 @@ func (x *TestInner) GetUserName() string {
 
 // TestNested holds a non-OUTPUT_ONLY field of message type. The outer
 // field must survive ClearOutputOnly, but the inner OUTPUT_ONLY field
-// must be cleared — proving recursion works.
+// must be cleared, proving recursion works.
 type TestNested struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Inner         *TestInner             `protobuf:"bytes,1,opt,name=inner,proto3" json:"inner,omitempty"`
@@ -445,7 +445,7 @@ func (*TestOneofOutputOnly_Manual) isTestOneofOutputOnly_Choice() {}
 func (*TestOneofOutputOnly_Computed) isTestOneofOutputOnly_Choice() {}
 
 // TestRepeatedOutputOnlyScalar exercises OUTPUT_ONLY on a repeated
-// scalar field — the whole list must be cleared.
+// scalar field, the whole list must be cleared.
 type TestRepeatedOutputOnlyScalar struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	ServerIds     []string               `protobuf:"bytes,1,rep,name=server_ids,json=serverIds,proto3" json:"server_ids,omitempty"`

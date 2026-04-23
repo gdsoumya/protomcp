@@ -27,11 +27,12 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 )
 
-// emailRE matches a simple email pattern. This is intentionally loose —
+// emailRE matches a simple email pattern. This is intentionally loose ,
 // real redaction should use a hardened library.
 var emailRE = regexp.MustCompile(`[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}`)
 
-func scrubEmails(_ context.Context, _ *mcp.CallToolRequest, r *mcp.CallToolResult) (*mcp.CallToolResult, error) {
+func scrubEmails(_ context.Context, _ *protomcp.GRPCData, data *protomcp.MCPData[*mcp.CallToolRequest, *mcp.CallToolResult]) (*mcp.CallToolResult, error) {
+	r := data.Output
 	for _, c := range r.Content {
 		if tc, ok := c.(*mcp.TextContent); ok {
 			tc.Text = emailRE.ReplaceAllString(tc.Text, "[email]")
@@ -60,7 +61,7 @@ func run(ctx context.Context, addr string) error {
 	defer shutdownGRPC()
 
 	srv := protomcp.New("greeter-redactor", "0.1.0",
-		protomcp.WithResultProcessor(scrubEmails),
+		protomcp.WithToolResultProcessor(scrubEmails),
 	)
 	greeterv1.RegisterGreeterMCPTools(srv, grpcClient)
 

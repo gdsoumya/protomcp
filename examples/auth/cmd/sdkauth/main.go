@@ -6,11 +6,11 @@
 //   - Layer 1: auth.RequireBearerToken wraps the protomcp.Server. The
 //     verifier extracts the principal and the SDK stashes the resulting
 //     *auth.TokenInfo on ctx via auth.TokenInfoFromContext.
-//   - Layer 2: a protomcp.Middleware reads TokenInfoFromContext and
+//   - Layer 2: a protomcp.ToolMiddleware reads TokenInfoFromContext and
 //     writes x-user-id / x-tenant into the outgoing gRPC metadata.
 //
 // The upstream PrincipalInterceptor reads those keys exactly as in the
-// `auth` example — zero gRPC-side changes. The SDK path is the right
+// `auth` example, zero gRPC-side changes. The SDK path is the right
 // choice when you want OAuth 2.1 spec alignment (WWW-Authenticate
 // header, RFC 9728 Protected Resource Metadata discovery, scope
 // enforcement) out of the box.
@@ -52,7 +52,7 @@ import (
 
 // validTokens is the hardcoded bearer-token table this demo uses in
 // lieu of a real identity provider. Each entry is keyed by the bearer
-// value (sans the "Bearer " prefix — the SDK strips that for us).
+// value (sans the "Bearer " prefix, the SDK strips that for us).
 var validTokens = map[string]struct {
 	UserID string
 	Tenant string
@@ -80,18 +80,18 @@ func run(ctx context.Context, addr string) error {
 	}
 	defer shutdownGRPC()
 
-	// Layer 2: protomcp.Middleware lifts the SDK's TokenInfo off ctx
+	// Layer 2: protomcp.ToolMiddleware lifts the SDK's TokenInfo off ctx
 	// and copies the relevant fields into outgoing gRPC metadata.
 	srv := protomcp.New("sdkauth-mcp", "0.1.0",
-		protomcp.WithMiddleware(tokenInfoToMetadata()),
+		protomcp.WithToolMiddleware(tokenInfoToMetadata()),
 	)
 	authv1.RegisterProfileMCPTools(srv, grpcClient)
 
-	// Layer 1: the SDK's own bearer-token middleware. It parses the
-	// Authorization header, hands the raw token to our verifier, and on
-	// success puts the resulting *auth.TokenInfo on the request ctx.
-	// On failure it responds with HTTP 401 + a WWW-Authenticate header
-	// (RFC 6750 / 9728 compliant) before our server ever sees the call.
+	// Layer 1: the MCP Go SDK's bearer-token middleware. It parses the
+	// Authorization header, hands the raw token to the verifier, and on
+	// success puts the resulting *auth.TokenInfo on the request ctx. On
+	// failure it responds with HTTP 401 + a WWW-Authenticate header
+	// (RFC 6750 / 9728 compliant) before the server ever sees the call.
 	bearer := auth.RequireBearerToken(verify, &auth.RequireBearerTokenOptions{
 		// Scopes left empty here; set this to require specific scopes.
 	})
@@ -134,8 +134,8 @@ func verify(_ context.Context, token string, _ *http.Request) (*auth.TokenInfo, 
 		return nil, fmt.Errorf("unknown bearer: %w", auth.ErrInvalidToken)
 	}
 	// The SDK requires TokenInfo.Expiration so session-lifetime handling
-	// has a deadline to work with. A real verifier reads this from the
-	// JWT exp claim; we hardcode one hour for this demo.
+	// has a deadline. A real verifier reads this from the JWT exp claim;
+	// the demo hardcodes one hour.
 	return &auth.TokenInfo{
 		UserID:     p.UserID,
 		Expiration: time.Now().Add(time.Hour),
@@ -146,9 +146,9 @@ func verify(_ context.Context, token string, _ *http.Request) (*auth.TokenInfo, 
 // tokenInfoToMetadata bridges the SDK auth layer to the upstream gRPC
 // server by reading the SDK-stashed TokenInfo off ctx and writing the
 // fields the server's PrincipalInterceptor already expects.
-func tokenInfoToMetadata() protomcp.Middleware {
-	return func(next protomcp.Handler) protomcp.Handler {
-		return func(ctx context.Context, req *mcp.CallToolRequest, g *protomcp.GRPCRequest) (*mcp.CallToolResult, error) {
+func tokenInfoToMetadata() protomcp.ToolMiddleware {
+	return func(next protomcp.ToolHandler) protomcp.ToolHandler {
+		return func(ctx context.Context, req *mcp.CallToolRequest, g *protomcp.GRPCData) (*mcp.CallToolResult, error) {
 			info := auth.TokenInfoFromContext(ctx)
 			if info == nil {
 				return nil, fmt.Errorf("no TokenInfo on ctx (is auth.RequireBearerToken wired up?)")
@@ -162,7 +162,7 @@ func tokenInfoToMetadata() protomcp.Middleware {
 			//
 			// SECURITY: this is a confused-deputy primitive. The token
 			// carries whatever audience and scope the issuer stamped on
-			// it — if the upstream server does NOT validate the `aud`
+			// it, if the upstream server does NOT validate the `aud`
 			// claim against itself (and enforce `scope`), any audience
 			// with a valid token effectively gets whatever that server
 			// exposes. Only forward the raw token when the upstream is

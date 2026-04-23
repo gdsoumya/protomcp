@@ -10,7 +10,6 @@ import (
 	protomcp "github.com/gdsoumya/protomcp/pkg/protomcp"
 	mcp "github.com/modelcontextprotocol/go-sdk/mcp"
 	metadata "google.golang.org/grpc/metadata"
-	protojson "google.golang.org/protobuf/encoding/protojson"
 )
 
 var _Profile_WhoAmI_InputSchema = protomcp.MustParseSchema(`{"properties":{},"type":"object"}`)
@@ -32,33 +31,34 @@ func RegisterProfileMCPTools(srv *protomcp.Server, client ProfileClient) {
 		Annotations:  &mcp.ToolAnnotations{ReadOnlyHint: true},
 	}, func(ctx context.Context, req *mcp.CallToolRequest, raw json.RawMessage) (*mcp.CallToolResult, any, error) {
 		var in WhoAmIRequest
-		if err := protojson.Unmarshal(raw, &in); err != nil {
-			return srv.FinishCall(ctx, req, nil, fmt.Errorf("invalid arguments: %w", err))
+		if err := srv.UnmarshalProto(raw, &in); err != nil {
+			return srv.FinishToolCall(ctx, req, nil, nil, fmt.Errorf("invalid arguments: %w", err))
 		}
-		// protojson unmarshaled whatever the client sent, including any
-		// fields marked google.api.field_behavior = OUTPUT_ONLY — which
-		// the advertised schema hides but the wire format does not
-		// enforce. Clear them so the upstream gRPC server never sees
-		// client-supplied values for server-computed fields.
+		// Clear OUTPUT_ONLY fields: the schema hides them but the
+		// wire format does not, so the upstream gRPC server must
+		// never see client-supplied values for server-computed fields.
 		protomcp.ClearOutputOnly(&in)
-		// Middleware receives &in via GRPCRequest.Input and may either
-		// mutate its fields in place (type-assert or proto-reflect) or
-		// replace the pointer entirely with another message of the same
-		// concrete type. The final handler always reads from g.Input so
-		// both forms propagate to the upstream call.
-		g := &protomcp.GRPCRequest{Input: &in, Metadata: metadata.MD{}}
+		// ToolMiddleware may mutate &in or replace the pointer; the
+		// final handler reads from g.Input so both forms propagate.
+		g := &protomcp.GRPCData{Input: &in, Metadata: metadata.MD{}}
+		// Forward the MCP progress token as a gRPC metadata header so
+		// downstream interceptors can correlate logs and traces.
+		if tok := req.Params.GetProgressToken(); tok != nil {
+			g.Metadata.Set(srv.ProgressTokenHeader(), protomcp.SanitizeMetadataValue(fmt.Sprintf("%v", tok)))
+		}
 
-		final := func(ctx context.Context, _ *mcp.CallToolRequest, g *protomcp.GRPCRequest) (*mcp.CallToolResult, error) {
+		final := func(ctx context.Context, _ *mcp.CallToolRequest, g *protomcp.GRPCData) (*mcp.CallToolResult, error) {
 			ctx = metadata.NewOutgoingContext(ctx, g.Metadata)
 			upstream, ok := g.Input.(*WhoAmIRequest)
 			if !ok {
-				return nil, fmt.Errorf("GRPCRequest.Input: want *%s, got %T", "WhoAmIRequest", g.Input)
+				return nil, fmt.Errorf("GRPCData.Input: want *%s, got %T", "WhoAmIRequest", g.Input)
 			}
 			resp, err := client.WhoAmI(ctx, upstream)
 			if err != nil {
 				return nil, err
 			}
-			outBytes, err := protojson.Marshal(resp)
+			g.Output = resp
+			outBytes, err := srv.MarshalProto(resp)
 			if err != nil {
 				return nil, err
 			}
@@ -68,8 +68,8 @@ func RegisterProfileMCPTools(srv *protomcp.Server, client ProfileClient) {
 			}, nil
 		}
 
-		result, err := srv.Chain(final)(ctx, req, g)
-		return srv.FinishCall(ctx, req, result, err)
+		result, err := srv.ToolChain(final)(ctx, req, g)
+		return srv.FinishToolCall(ctx, req, g, result, err)
 	})
 
 }

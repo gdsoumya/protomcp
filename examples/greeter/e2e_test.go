@@ -5,7 +5,7 @@
 //     one MCP progress notification per gRPC message and returns a summary
 //
 // It also asserts that the unannotated RPC (Internal) is NOT registered as
-// a tool — proving the default-deny annotation policy.
+// a tool, proving the default-deny annotation policy.
 package greeter_test
 
 import (
@@ -98,7 +98,7 @@ func TestUnaryTool(t *testing.T) {
 }
 
 // TestToolsListSkipsUnannotated verifies that the unannotated Internal RPC
-// does NOT appear in tools/list — that is the acceptance test for default-deny.
+// does NOT appear in tools/list, that is the acceptance test for default-deny.
 func TestToolsListSkipsUnannotated(t *testing.T) {
 	grpcClient := startGRPC(t)
 	srv := protomcp.New("greeter", "0.1.0")
