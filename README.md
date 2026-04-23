@@ -368,11 +368,13 @@ protomcp deliberately does not codegen subscribe handlers. MCP's `resources/subs
 
 The MCP Go SDK already handles the mechanics. Supply `ServerOptions.SubscribeHandler` and `UnsubscribeHandler` (both required; the SDK panics at `NewServer` if only one is set), then call `srv.SDK().ResourceUpdated(ctx, params)` when a resource changes. The SDK tracks per-session per-URI subscriptions internally and delivers each `ResourceUpdated` call only to the sessions that asked for that URI.
 
+The subscribe/unsubscribe handlers only act as a gate: the SDK calls them first (`return err` to reject, `return nil` to allow), and on allow unconditionally records the session in its subscriptions map. `ResourceUpdated` always reads from that same map, so the same fan-out works with either no-op handlers or custom ones. The handler type decides **which URIs are accepted** and **what extra work runs on subscribe/unsubscribe** (starting an upstream feed, cleaning it up), not whether `ResourceUpdated` delivers.
+
 There are two common shapes:
 
-1. **Push from the write path (no-op handlers).** Supply `func(...) error { return nil }` for both handlers and call `ResourceUpdated` from wherever mutations happen. This is the pattern the MCP Go SDK's own conformance server uses. Best when events originate inside the same process as the MCP server.
+1. **Push from the write path (no-op handlers).** Supply `func(...) error { return nil }` for both handlers and call `ResourceUpdated` from wherever mutations happen. Best when events originate inside the same process as the MCP server.
 
-2. **Wrap an external source.** Real handlers that start/stop upstream delivery per subscription (open a gRPC stream, run a PG `LISTEN`, subscribe to a Redis/Kafka topic, register a webhook). Best when events come from outside the process.
+2. **Wrap an external source.** Real handlers that start/stop upstream delivery per subscription (open a gRPC stream, run a PG `LISTEN`, subscribe to a Redis/Kafka topic, register a webhook). Best when events come from outside the process. Still call `ResourceUpdated` on each incoming event.
 
 [`examples/subscriptions`](examples/subscriptions) ships both as runnable demos: `cmd/subscriptions-simple` for the push-from-write-path pattern (about 30 lines of wiring) and `cmd/subscriptions` for the external-source pattern with a reusable `Hub` + `Manager` and race-tested session-close cleanup.
 
