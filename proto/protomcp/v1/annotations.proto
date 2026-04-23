@@ -6,47 +6,173 @@ import "google/protobuf/descriptor.proto";
 
 option go_package = "github.com/gdsoumya/protomcp/pkg/api/gen/protomcp/v1;protomcpv1";
 
-// Method-level MCP tool options. Presence of this option on an RPC method is
-// what opts the method in to MCP tool generation — unannotated methods are
-// never exposed.
+// Method-level MCP primitive options. Presence of any option opts the
+// RPC in; unannotated RPCs are never exposed.
 extend google.protobuf.MethodOptions {
   ToolOptions tool = 50001;
+
+  // ResourceTemplate exposes the RPC as a resource template advertised
+  // via `resources/templates/list` and dispatched on `resources/read`.
+  // Static resources are not codegen'd; use srv.SDK().AddResource(...).
+  ResourceTemplateOptions resource_template = 50003;
+
+  // ResourceList exposes the RPC as the server's single response for
+  // `resources/list`. At most one annotation per generation run.
+  ResourceListOptions resource_list = 50004;
+
+  // Prompt exposes the RPC as an MCP prompt via `prompts/get`. Unary.
+  PromptOptions prompt = 50005;
+
+  // Tag 50007 (resource_subscribe) is reserved; subscriptions are
+  // user-wired against the MCP Go SDK. See examples/subscriptions.
+
+  // ResourceListChanged marks a server-streaming RPC as a change feed
+  // for `notifications/resources/list_changed`.
+  ResourceListChangedOptions resource_list_changed = 50008;
 }
 
-// Service-level MCP options. Applied to every annotated method on the service.
 extend google.protobuf.ServiceOptions {
   ServiceOptions service = 50002;
 }
 
-// ToolOptions controls how a single RPC method is surfaced as an MCP tool.
-// Every field is optional. The mere presence of this option opts the method in.
+// Method-level elicitation modifier. Requires a sibling
+// protomcp.v1.tool on the same RPC; the generated tool handler calls
+// session.Elicit before the upstream gRPC call, gating execution on
+// user confirmation. Missing sibling tool is a hard codegen error.
+extend google.protobuf.MethodOptions {
+  ElicitationOptions elicitation = 50006;
+}
+
+// ToolOptions controls how a single RPC is surfaced as an MCP tool.
 message ToolOptions {
-  // Tool name override. When unset the generator derives the name from the
-  // service and method names (dots and slashes sanitized). If the enclosing
-  // service has a tool_prefix set, it is prepended to either value.
+  // Tool name override. Defaults to <Service>_<Method>; a service-level
+  // tool_prefix is prepended after this override.
   string name = 1;
 
-  // Human-readable title shown by MCP clients.
   string title = 2;
 
-  // Tool description shown to LLM clients. Overrides the method's leading
-  // proto comment when set.
+  // Description shown to LLM clients. Overrides the method's leading
+  // proto comment.
   string description = 3;
 
-  // Tool hints surfaced on the MCP Tool.Annotations payload. They let clients
-  // make safer UX choices (e.g., auto-approve read-only calls, warn on
-  // destructive ones). Matching MCP spec semantics.
+  // Hints surfaced on MCP Tool.Annotations for client consent UX.
   bool read_only   = 4;
   bool idempotent  = 5;
   bool destructive = 6;
+  // open_world signals the tool reaches outside the local server
+  // (web fetch, third-party API, search).
+  bool open_world  = 7;
 }
 
 // ServiceOptions applies to every annotated method on the service.
 message ServiceOptions {
-  // Prefix prepended verbatim to every generated tool name on this service.
-  // Include your desired separator in the prefix string itself, e.g.
-  // tool_prefix: "greeter_" turns "SayHello" into "greeter_SayHello";
-  // tool_prefix: "ns.v1." turns it into "ns.v1.SayHello". The prefix is
-  // applied after the per-method name override.
+  // Prefix prepended to every generated tool name on this service.
+  // Include the separator in the prefix itself (e.g. "greeter_").
   string tool_prefix = 1;
+}
+
+// PlaceholderBinding maps a URI-template placeholder to a dotted proto
+// field path.
+message PlaceholderBinding {
+  // Single-brace variable name from the RFC 6570 URI template, without
+  // braces (e.g. "id" matches "{id}").
+  string placeholder = 1;
+  // Dotted path into the target proto message. Request message for
+  // resource_template; item message for resource_list.
+  string field = 2;
+}
+
+// ResourceTemplateOptions exposes a unary RPC as a resource template.
+message ResourceTemplateOptions {
+  // RFC 6570 single-brace URI template, e.g. "tasks://{id}". Every
+  // placeholder must appear in uri_bindings.
+  string uri_template = 1;
+  // Placeholder-to-request-field bindings. One per placeholder.
+  repeated PlaceholderBinding uri_bindings = 2;
+  // Mustache template rendered against the gRPC RESPONSE for
+  // Resource.name. Logic-less; sections and partials are rejected.
+  string name_field = 3;
+  // Mustache template rendered against the RESPONSE for Resource.description.
+  string description_field = 4;
+  // MIME type. Defaults to "application/json"; REQUIRED with blob_field.
+  string mime_type = 5;
+  // Dotted path to a `bytes` field on the RESPONSE. When set, emits
+  // the field as ResourceContents.Blob instead of protojson text.
+  // Requires mime_type.
+  string blob_field = 6;
+}
+
+// ResourceListOptions exposes a unary RPC as the server's
+// `resources/list` response. MCP's `resources/list` has no URI filter,
+// so multi-type enumeration uses a templated scheme
+// (e.g. "{type}://{id}") on one cumulative RPC. At most one annotation
+// per generation run.
+message ResourceListOptions {
+  // Path to the repeated items inside the gRPC response.
+  string item_path = 1;
+  // URI template rendered per item. A scheme-position placeholder
+  // enumerates multiple resource types from one RPC.
+  string uri_template = 2;
+  // Placeholder-to-item-field bindings. field is a path on the ITEM
+  // message, not the outer response.
+  repeated PlaceholderBinding uri_bindings = 3;
+  // Mustache template over each item producing Resource.name. REQUIRED.
+  string name_field = 4;
+  // Mustache template over each item producing Resource.description.
+  string description_field = 5;
+  // MIME type advertised on every emitted resource. Defaults to
+  // "application/json".
+  string mime_type = 6;
+
+  // Tag 7 (next_page_token_field) is reserved; pagination is expressed
+  // via ResourceListMiddleware + ResourceListResultProcessor. See
+  // protomcp.PageTokenPagination.
+  reserved 7;
+  reserved "next_page_token_field";
+}
+
+// PromptOptions surfaces a unary RPC as an MCP prompt. The template
+// is validated at codegen; only interpolation nodes are allowed
+// (sections and partials are rejected). Rendered as a single user-role
+// PromptMessage with TextContent.
+message PromptOptions {
+  // Prompt name override. Defaults to <Service>_<Method>.
+  string name = 1;
+
+  string title = 2;
+
+  // Description. Overrides the method's leading proto comment.
+  string description = 3;
+
+  // Mustache template rendered against the RPC's RESPONSE.
+  string template = 4;
+}
+
+// ResourceListChangedOptions marks a server-streaming RPC whose
+// messages trigger `notifications/resources/list_changed` fanout.
+// Codegen emits Start<Svc>MCPResourceListChangedWatchers which opens
+// the stream and fires Server.NotifyResourceListChanged on every
+// received message with exponential backoff (100 ms to 30 s, ±10%
+// jitter, reset on first message per reconnect). At most one
+// annotation per generation run; the RPC MUST be server-streaming.
+// Stream-message payloads are ignored: list_changed is a bare
+// trigger.
+message ResourceListChangedOptions {
+  // Presence of the annotation opts the RPC in.
+}
+
+// ElicitationOptions controls the confirmation prompt shown before the
+// tool's gRPC call. Modifier on protomcp.v1.tool; attaching without a
+// sibling tool is a hard codegen error. Confirm-only by design; MCP's
+// form and URL modes do not map onto a unary gRPC call, so structured
+// input should be tool arguments.
+message ElicitationOptions {
+  // Confirmation prompt. Plain string or a Mustache template over the
+  // RPC's REQUEST message, e.g. "Delete task {{id}}?". Validated at
+  // codegen; logic-less.
+  string message = 1;
+
+  // Tag 2 (schema_message) was form-mode elicitation; unsupported.
+  reserved 2;
+  reserved "schema_message";
 }

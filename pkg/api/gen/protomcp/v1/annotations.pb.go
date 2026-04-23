@@ -22,25 +22,23 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-// ToolOptions controls how a single RPC method is surfaced as an MCP tool.
-// Every field is optional. The mere presence of this option opts the method in.
+// ToolOptions controls how a single RPC is surfaced as an MCP tool.
 type ToolOptions struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Tool name override. When unset the generator derives the name from the
-	// service and method names (dots and slashes sanitized). If the enclosing
-	// service has a tool_prefix set, it is prepended to either value.
-	Name string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	// Human-readable title shown by MCP clients.
+	// Tool name override. Defaults to <Service>_<Method>; a service-level
+	// tool_prefix is prepended after this override.
+	Name  string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
 	Title string `protobuf:"bytes,2,opt,name=title,proto3" json:"title,omitempty"`
-	// Tool description shown to LLM clients. Overrides the method's leading
-	// proto comment when set.
+	// Description shown to LLM clients. Overrides the method's leading
+	// proto comment.
 	Description string `protobuf:"bytes,3,opt,name=description,proto3" json:"description,omitempty"`
-	// Tool hints surfaced on the MCP Tool.Annotations payload. They let clients
-	// make safer UX choices (e.g., auto-approve read-only calls, warn on
-	// destructive ones). Matching MCP spec semantics.
-	ReadOnly      bool `protobuf:"varint,4,opt,name=read_only,json=readOnly,proto3" json:"read_only,omitempty"`
-	Idempotent    bool `protobuf:"varint,5,opt,name=idempotent,proto3" json:"idempotent,omitempty"`
-	Destructive   bool `protobuf:"varint,6,opt,name=destructive,proto3" json:"destructive,omitempty"`
+	// Hints surfaced on MCP Tool.Annotations for client consent UX.
+	ReadOnly    bool `protobuf:"varint,4,opt,name=read_only,json=readOnly,proto3" json:"read_only,omitempty"`
+	Idempotent  bool `protobuf:"varint,5,opt,name=idempotent,proto3" json:"idempotent,omitempty"`
+	Destructive bool `protobuf:"varint,6,opt,name=destructive,proto3" json:"destructive,omitempty"`
+	// open_world signals the tool reaches outside the local server
+	// (web fetch, third-party API, search).
+	OpenWorld     bool `protobuf:"varint,7,opt,name=open_world,json=openWorld,proto3" json:"open_world,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -117,14 +115,18 @@ func (x *ToolOptions) GetDestructive() bool {
 	return false
 }
 
+func (x *ToolOptions) GetOpenWorld() bool {
+	if x != nil {
+		return x.OpenWorld
+	}
+	return false
+}
+
 // ServiceOptions applies to every annotated method on the service.
 type ServiceOptions struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Prefix prepended verbatim to every generated tool name on this service.
-	// Include your desired separator in the prefix string itself, e.g.
-	// tool_prefix: "greeter_" turns "SayHello" into "greeter_SayHello";
-	// tool_prefix: "ns.v1." turns it into "ns.v1.SayHello". The prefix is
-	// applied after the per-method name override.
+	// Prefix prepended to every generated tool name on this service.
+	// Include the separator in the prefix itself (e.g. "greeter_").
 	ToolPrefix    string `protobuf:"bytes,1,opt,name=tool_prefix,json=toolPrefix,proto3" json:"tool_prefix,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -167,6 +169,429 @@ func (x *ServiceOptions) GetToolPrefix() string {
 	return ""
 }
 
+// PlaceholderBinding maps a URI-template placeholder to a dotted proto
+// field path.
+type PlaceholderBinding struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Single-brace variable name from the RFC 6570 URI template, without
+	// braces (e.g. "id" matches "{id}").
+	Placeholder string `protobuf:"bytes,1,opt,name=placeholder,proto3" json:"placeholder,omitempty"`
+	// Dotted path into the target proto message. Request message for
+	// resource_template; item message for resource_list.
+	Field         string `protobuf:"bytes,2,opt,name=field,proto3" json:"field,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PlaceholderBinding) Reset() {
+	*x = PlaceholderBinding{}
+	mi := &file_protomcp_v1_annotations_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PlaceholderBinding) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PlaceholderBinding) ProtoMessage() {}
+
+func (x *PlaceholderBinding) ProtoReflect() protoreflect.Message {
+	mi := &file_protomcp_v1_annotations_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PlaceholderBinding.ProtoReflect.Descriptor instead.
+func (*PlaceholderBinding) Descriptor() ([]byte, []int) {
+	return file_protomcp_v1_annotations_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *PlaceholderBinding) GetPlaceholder() string {
+	if x != nil {
+		return x.Placeholder
+	}
+	return ""
+}
+
+func (x *PlaceholderBinding) GetField() string {
+	if x != nil {
+		return x.Field
+	}
+	return ""
+}
+
+// ResourceTemplateOptions exposes a unary RPC as a resource template.
+type ResourceTemplateOptions struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// RFC 6570 single-brace URI template, e.g. "tasks://{id}". Every
+	// placeholder must appear in uri_bindings.
+	UriTemplate string `protobuf:"bytes,1,opt,name=uri_template,json=uriTemplate,proto3" json:"uri_template,omitempty"`
+	// Placeholder-to-request-field bindings. One per placeholder.
+	UriBindings []*PlaceholderBinding `protobuf:"bytes,2,rep,name=uri_bindings,json=uriBindings,proto3" json:"uri_bindings,omitempty"`
+	// Mustache template rendered against the gRPC RESPONSE for
+	// Resource.name. Logic-less; sections and partials are rejected.
+	NameField string `protobuf:"bytes,3,opt,name=name_field,json=nameField,proto3" json:"name_field,omitempty"`
+	// Mustache template rendered against the RESPONSE for Resource.description.
+	DescriptionField string `protobuf:"bytes,4,opt,name=description_field,json=descriptionField,proto3" json:"description_field,omitempty"`
+	// MIME type. Defaults to "application/json"; REQUIRED with blob_field.
+	MimeType string `protobuf:"bytes,5,opt,name=mime_type,json=mimeType,proto3" json:"mime_type,omitempty"`
+	// Dotted path to a `bytes` field on the RESPONSE. When set, emits
+	// the field as ResourceContents.Blob instead of protojson text.
+	// Requires mime_type.
+	BlobField     string `protobuf:"bytes,6,opt,name=blob_field,json=blobField,proto3" json:"blob_field,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ResourceTemplateOptions) Reset() {
+	*x = ResourceTemplateOptions{}
+	mi := &file_protomcp_v1_annotations_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ResourceTemplateOptions) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ResourceTemplateOptions) ProtoMessage() {}
+
+func (x *ResourceTemplateOptions) ProtoReflect() protoreflect.Message {
+	mi := &file_protomcp_v1_annotations_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ResourceTemplateOptions.ProtoReflect.Descriptor instead.
+func (*ResourceTemplateOptions) Descriptor() ([]byte, []int) {
+	return file_protomcp_v1_annotations_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *ResourceTemplateOptions) GetUriTemplate() string {
+	if x != nil {
+		return x.UriTemplate
+	}
+	return ""
+}
+
+func (x *ResourceTemplateOptions) GetUriBindings() []*PlaceholderBinding {
+	if x != nil {
+		return x.UriBindings
+	}
+	return nil
+}
+
+func (x *ResourceTemplateOptions) GetNameField() string {
+	if x != nil {
+		return x.NameField
+	}
+	return ""
+}
+
+func (x *ResourceTemplateOptions) GetDescriptionField() string {
+	if x != nil {
+		return x.DescriptionField
+	}
+	return ""
+}
+
+func (x *ResourceTemplateOptions) GetMimeType() string {
+	if x != nil {
+		return x.MimeType
+	}
+	return ""
+}
+
+func (x *ResourceTemplateOptions) GetBlobField() string {
+	if x != nil {
+		return x.BlobField
+	}
+	return ""
+}
+
+// ResourceListOptions exposes a unary RPC as the server's
+// `resources/list` response. MCP's `resources/list` has no URI filter,
+// so multi-type enumeration uses a templated scheme
+// (e.g. "{type}://{id}") on one cumulative RPC. At most one annotation
+// per generation run.
+type ResourceListOptions struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Path to the repeated items inside the gRPC response.
+	ItemPath string `protobuf:"bytes,1,opt,name=item_path,json=itemPath,proto3" json:"item_path,omitempty"`
+	// URI template rendered per item. A scheme-position placeholder
+	// enumerates multiple resource types from one RPC.
+	UriTemplate string `protobuf:"bytes,2,opt,name=uri_template,json=uriTemplate,proto3" json:"uri_template,omitempty"`
+	// Placeholder-to-item-field bindings. field is a path on the ITEM
+	// message, not the outer response.
+	UriBindings []*PlaceholderBinding `protobuf:"bytes,3,rep,name=uri_bindings,json=uriBindings,proto3" json:"uri_bindings,omitempty"`
+	// Mustache template over each item producing Resource.name. REQUIRED.
+	NameField string `protobuf:"bytes,4,opt,name=name_field,json=nameField,proto3" json:"name_field,omitempty"`
+	// Mustache template over each item producing Resource.description.
+	DescriptionField string `protobuf:"bytes,5,opt,name=description_field,json=descriptionField,proto3" json:"description_field,omitempty"`
+	// MIME type advertised on every emitted resource. Defaults to
+	// "application/json".
+	MimeType      string `protobuf:"bytes,6,opt,name=mime_type,json=mimeType,proto3" json:"mime_type,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ResourceListOptions) Reset() {
+	*x = ResourceListOptions{}
+	mi := &file_protomcp_v1_annotations_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ResourceListOptions) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ResourceListOptions) ProtoMessage() {}
+
+func (x *ResourceListOptions) ProtoReflect() protoreflect.Message {
+	mi := &file_protomcp_v1_annotations_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ResourceListOptions.ProtoReflect.Descriptor instead.
+func (*ResourceListOptions) Descriptor() ([]byte, []int) {
+	return file_protomcp_v1_annotations_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *ResourceListOptions) GetItemPath() string {
+	if x != nil {
+		return x.ItemPath
+	}
+	return ""
+}
+
+func (x *ResourceListOptions) GetUriTemplate() string {
+	if x != nil {
+		return x.UriTemplate
+	}
+	return ""
+}
+
+func (x *ResourceListOptions) GetUriBindings() []*PlaceholderBinding {
+	if x != nil {
+		return x.UriBindings
+	}
+	return nil
+}
+
+func (x *ResourceListOptions) GetNameField() string {
+	if x != nil {
+		return x.NameField
+	}
+	return ""
+}
+
+func (x *ResourceListOptions) GetDescriptionField() string {
+	if x != nil {
+		return x.DescriptionField
+	}
+	return ""
+}
+
+func (x *ResourceListOptions) GetMimeType() string {
+	if x != nil {
+		return x.MimeType
+	}
+	return ""
+}
+
+// PromptOptions surfaces a unary RPC as an MCP prompt. The template
+// is validated at codegen; only interpolation nodes are allowed
+// (sections and partials are rejected). Rendered as a single user-role
+// PromptMessage with TextContent.
+type PromptOptions struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Prompt name override. Defaults to <Service>_<Method>.
+	Name  string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Title string `protobuf:"bytes,2,opt,name=title,proto3" json:"title,omitempty"`
+	// Description. Overrides the method's leading proto comment.
+	Description string `protobuf:"bytes,3,opt,name=description,proto3" json:"description,omitempty"`
+	// Mustache template rendered against the RPC's RESPONSE.
+	Template      string `protobuf:"bytes,4,opt,name=template,proto3" json:"template,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PromptOptions) Reset() {
+	*x = PromptOptions{}
+	mi := &file_protomcp_v1_annotations_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PromptOptions) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PromptOptions) ProtoMessage() {}
+
+func (x *PromptOptions) ProtoReflect() protoreflect.Message {
+	mi := &file_protomcp_v1_annotations_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PromptOptions.ProtoReflect.Descriptor instead.
+func (*PromptOptions) Descriptor() ([]byte, []int) {
+	return file_protomcp_v1_annotations_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *PromptOptions) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *PromptOptions) GetTitle() string {
+	if x != nil {
+		return x.Title
+	}
+	return ""
+}
+
+func (x *PromptOptions) GetDescription() string {
+	if x != nil {
+		return x.Description
+	}
+	return ""
+}
+
+func (x *PromptOptions) GetTemplate() string {
+	if x != nil {
+		return x.Template
+	}
+	return ""
+}
+
+// ResourceListChangedOptions marks a server-streaming RPC whose
+// messages trigger `notifications/resources/list_changed` fanout.
+// Codegen emits Start<Svc>MCPResourceListChangedWatchers which opens
+// the stream and fires Server.NotifyResourceListChanged on every
+// received message with exponential backoff (100 ms to 30 s, ±10%
+// jitter, reset on first message per reconnect). At most one
+// annotation per generation run; the RPC MUST be server-streaming.
+// Stream-message payloads are ignored: list_changed is a bare
+// trigger.
+type ResourceListChangedOptions struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ResourceListChangedOptions) Reset() {
+	*x = ResourceListChangedOptions{}
+	mi := &file_protomcp_v1_annotations_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ResourceListChangedOptions) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ResourceListChangedOptions) ProtoMessage() {}
+
+func (x *ResourceListChangedOptions) ProtoReflect() protoreflect.Message {
+	mi := &file_protomcp_v1_annotations_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ResourceListChangedOptions.ProtoReflect.Descriptor instead.
+func (*ResourceListChangedOptions) Descriptor() ([]byte, []int) {
+	return file_protomcp_v1_annotations_proto_rawDescGZIP(), []int{6}
+}
+
+// ElicitationOptions controls the confirmation prompt shown before the
+// tool's gRPC call. Modifier on protomcp.v1.tool; attaching without a
+// sibling tool is a hard codegen error. Confirm-only by design; MCP's
+// form and URL modes do not map onto a unary gRPC call, so structured
+// input should be tool arguments.
+type ElicitationOptions struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Confirmation prompt. Plain string or a Mustache template over the
+	// RPC's REQUEST message, e.g. "Delete task {{id}}?". Validated at
+	// codegen; logic-less.
+	Message       string `protobuf:"bytes,1,opt,name=message,proto3" json:"message,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ElicitationOptions) Reset() {
+	*x = ElicitationOptions{}
+	mi := &file_protomcp_v1_annotations_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ElicitationOptions) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ElicitationOptions) ProtoMessage() {}
+
+func (x *ElicitationOptions) ProtoReflect() protoreflect.Message {
+	mi := &file_protomcp_v1_annotations_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ElicitationOptions.ProtoReflect.Descriptor instead.
+func (*ElicitationOptions) Descriptor() ([]byte, []int) {
+	return file_protomcp_v1_annotations_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *ElicitationOptions) GetMessage() string {
+	if x != nil {
+		return x.Message
+	}
+	return ""
+}
+
 var file_protomcp_v1_annotations_proto_extTypes = []protoimpl.ExtensionInfo{
 	{
 		ExtendedType:  (*descriptorpb.MethodOptions)(nil),
@@ -177,11 +602,51 @@ var file_protomcp_v1_annotations_proto_extTypes = []protoimpl.ExtensionInfo{
 		Filename:      "protomcp/v1/annotations.proto",
 	},
 	{
+		ExtendedType:  (*descriptorpb.MethodOptions)(nil),
+		ExtensionType: (*ResourceTemplateOptions)(nil),
+		Field:         50003,
+		Name:          "protomcp.v1.resource_template",
+		Tag:           "bytes,50003,opt,name=resource_template",
+		Filename:      "protomcp/v1/annotations.proto",
+	},
+	{
+		ExtendedType:  (*descriptorpb.MethodOptions)(nil),
+		ExtensionType: (*ResourceListOptions)(nil),
+		Field:         50004,
+		Name:          "protomcp.v1.resource_list",
+		Tag:           "bytes,50004,opt,name=resource_list",
+		Filename:      "protomcp/v1/annotations.proto",
+	},
+	{
+		ExtendedType:  (*descriptorpb.MethodOptions)(nil),
+		ExtensionType: (*PromptOptions)(nil),
+		Field:         50005,
+		Name:          "protomcp.v1.prompt",
+		Tag:           "bytes,50005,opt,name=prompt",
+		Filename:      "protomcp/v1/annotations.proto",
+	},
+	{
+		ExtendedType:  (*descriptorpb.MethodOptions)(nil),
+		ExtensionType: (*ResourceListChangedOptions)(nil),
+		Field:         50008,
+		Name:          "protomcp.v1.resource_list_changed",
+		Tag:           "bytes,50008,opt,name=resource_list_changed",
+		Filename:      "protomcp/v1/annotations.proto",
+	},
+	{
 		ExtendedType:  (*descriptorpb.ServiceOptions)(nil),
 		ExtensionType: (*ServiceOptions)(nil),
 		Field:         50002,
 		Name:          "protomcp.v1.service",
 		Tag:           "bytes,50002,opt,name=service",
+		Filename:      "protomcp/v1/annotations.proto",
+	},
+	{
+		ExtendedType:  (*descriptorpb.MethodOptions)(nil),
+		ExtensionType: (*ElicitationOptions)(nil),
+		Field:         50006,
+		Name:          "protomcp.v1.elicitation",
+		Tag:           "bytes,50006,opt,name=elicitation",
 		Filename:      "protomcp/v1/annotations.proto",
 	},
 }
@@ -190,19 +655,41 @@ var file_protomcp_v1_annotations_proto_extTypes = []protoimpl.ExtensionInfo{
 var (
 	// optional protomcp.v1.ToolOptions tool = 50001;
 	E_Tool = &file_protomcp_v1_annotations_proto_extTypes[0]
+	// ResourceTemplate exposes the RPC as a resource template advertised
+	// via `resources/templates/list` and dispatched on `resources/read`.
+	// Static resources are not codegen'd; use srv.SDK().AddResource(...).
+	//
+	// optional protomcp.v1.ResourceTemplateOptions resource_template = 50003;
+	E_ResourceTemplate = &file_protomcp_v1_annotations_proto_extTypes[1]
+	// ResourceList exposes the RPC as the server's single response for
+	// `resources/list`. At most one annotation per generation run.
+	//
+	// optional protomcp.v1.ResourceListOptions resource_list = 50004;
+	E_ResourceList = &file_protomcp_v1_annotations_proto_extTypes[2]
+	// Prompt exposes the RPC as an MCP prompt via `prompts/get`. Unary.
+	//
+	// optional protomcp.v1.PromptOptions prompt = 50005;
+	E_Prompt = &file_protomcp_v1_annotations_proto_extTypes[3]
+	// ResourceListChanged marks a server-streaming RPC as a change feed
+	// for `notifications/resources/list_changed`.
+	//
+	// optional protomcp.v1.ResourceListChangedOptions resource_list_changed = 50008;
+	E_ResourceListChanged = &file_protomcp_v1_annotations_proto_extTypes[4]
+	// optional protomcp.v1.ElicitationOptions elicitation = 50006;
+	E_Elicitation = &file_protomcp_v1_annotations_proto_extTypes[6]
 )
 
 // Extension fields to descriptorpb.ServiceOptions.
 var (
 	// optional protomcp.v1.ServiceOptions service = 50002;
-	E_Service = &file_protomcp_v1_annotations_proto_extTypes[1]
+	E_Service = &file_protomcp_v1_annotations_proto_extTypes[5]
 )
 
 var File_protomcp_v1_annotations_proto protoreflect.FileDescriptor
 
 const file_protomcp_v1_annotations_proto_rawDesc = "" +
 	"\n" +
-	"\x1dprotomcp/v1/annotations.proto\x12\vprotomcp.v1\x1a google/protobuf/descriptor.proto\"\xb8\x01\n" +
+	"\x1dprotomcp/v1/annotations.proto\x12\vprotomcp.v1\x1a google/protobuf/descriptor.proto\"\xd7\x01\n" +
 	"\vToolOptions\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x14\n" +
 	"\x05title\x18\x02 \x01(\tR\x05title\x12 \n" +
@@ -211,12 +698,47 @@ const file_protomcp_v1_annotations_proto_rawDesc = "" +
 	"\n" +
 	"idempotent\x18\x05 \x01(\bR\n" +
 	"idempotent\x12 \n" +
-	"\vdestructive\x18\x06 \x01(\bR\vdestructive\"1\n" +
+	"\vdestructive\x18\x06 \x01(\bR\vdestructive\x12\x1d\n" +
+	"\n" +
+	"open_world\x18\a \x01(\bR\topenWorld\"1\n" +
 	"\x0eServiceOptions\x12\x1f\n" +
 	"\vtool_prefix\x18\x01 \x01(\tR\n" +
-	"toolPrefix:N\n" +
-	"\x04tool\x12\x1e.google.protobuf.MethodOptions\x18ц\x03 \x01(\v2\x18.protomcp.v1.ToolOptionsR\x04tool:X\n" +
-	"\aservice\x12\x1f.google.protobuf.ServiceOptions\x18҆\x03 \x01(\v2\x1b.protomcp.v1.ServiceOptionsR\aserviceB\xb1\x01\n" +
+	"toolPrefix\"L\n" +
+	"\x12PlaceholderBinding\x12 \n" +
+	"\vplaceholder\x18\x01 \x01(\tR\vplaceholder\x12\x14\n" +
+	"\x05field\x18\x02 \x01(\tR\x05field\"\x88\x02\n" +
+	"\x17ResourceTemplateOptions\x12!\n" +
+	"\furi_template\x18\x01 \x01(\tR\vuriTemplate\x12B\n" +
+	"\furi_bindings\x18\x02 \x03(\v2\x1f.protomcp.v1.PlaceholderBindingR\vuriBindings\x12\x1d\n" +
+	"\n" +
+	"name_field\x18\x03 \x01(\tR\tnameField\x12+\n" +
+	"\x11description_field\x18\x04 \x01(\tR\x10descriptionField\x12\x1b\n" +
+	"\tmime_type\x18\x05 \x01(\tR\bmimeType\x12\x1d\n" +
+	"\n" +
+	"blob_field\x18\x06 \x01(\tR\tblobField\"\x9f\x02\n" +
+	"\x13ResourceListOptions\x12\x1b\n" +
+	"\titem_path\x18\x01 \x01(\tR\bitemPath\x12!\n" +
+	"\furi_template\x18\x02 \x01(\tR\vuriTemplate\x12B\n" +
+	"\furi_bindings\x18\x03 \x03(\v2\x1f.protomcp.v1.PlaceholderBindingR\vuriBindings\x12\x1d\n" +
+	"\n" +
+	"name_field\x18\x04 \x01(\tR\tnameField\x12+\n" +
+	"\x11description_field\x18\x05 \x01(\tR\x10descriptionField\x12\x1b\n" +
+	"\tmime_type\x18\x06 \x01(\tR\bmimeTypeJ\x04\b\a\x10\bR\x15next_page_token_field\"w\n" +
+	"\rPromptOptions\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x14\n" +
+	"\x05title\x18\x02 \x01(\tR\x05title\x12 \n" +
+	"\vdescription\x18\x03 \x01(\tR\vdescription\x12\x1a\n" +
+	"\btemplate\x18\x04 \x01(\tR\btemplate\"\x1c\n" +
+	"\x1aResourceListChangedOptions\"D\n" +
+	"\x12ElicitationOptions\x12\x18\n" +
+	"\amessage\x18\x01 \x01(\tR\amessageJ\x04\b\x02\x10\x03R\x0eschema_message:N\n" +
+	"\x04tool\x12\x1e.google.protobuf.MethodOptions\x18ц\x03 \x01(\v2\x18.protomcp.v1.ToolOptionsR\x04tool:s\n" +
+	"\x11resource_template\x12\x1e.google.protobuf.MethodOptions\x18ӆ\x03 \x01(\v2$.protomcp.v1.ResourceTemplateOptionsR\x10resourceTemplate:g\n" +
+	"\rresource_list\x12\x1e.google.protobuf.MethodOptions\x18Ԇ\x03 \x01(\v2 .protomcp.v1.ResourceListOptionsR\fresourceList:T\n" +
+	"\x06prompt\x12\x1e.google.protobuf.MethodOptions\x18Ն\x03 \x01(\v2\x1a.protomcp.v1.PromptOptionsR\x06prompt:}\n" +
+	"\x15resource_list_changed\x12\x1e.google.protobuf.MethodOptions\x18؆\x03 \x01(\v2'.protomcp.v1.ResourceListChangedOptionsR\x13resourceListChanged:X\n" +
+	"\aservice\x12\x1f.google.protobuf.ServiceOptions\x18҆\x03 \x01(\v2\x1b.protomcp.v1.ServiceOptionsR\aservice:c\n" +
+	"\velicitation\x12\x1e.google.protobuf.MethodOptions\x18ֆ\x03 \x01(\v2\x1f.protomcp.v1.ElicitationOptionsR\velicitationB\xb1\x01\n" +
 	"\x0fcom.protomcp.v1B\x10AnnotationsProtoP\x01Z?github.com/gdsoumya/protomcp/pkg/api/gen/protomcp/v1;protomcpv1\xa2\x02\x03PXX\xaa\x02\vProtomcp.V1\xca\x02\vProtomcp\\V1\xe2\x02\x17Protomcp\\V1\\GPBMetadata\xea\x02\fProtomcp::V1b\x06proto3"
 
 var (
@@ -231,23 +753,41 @@ func file_protomcp_v1_annotations_proto_rawDescGZIP() []byte {
 	return file_protomcp_v1_annotations_proto_rawDescData
 }
 
-var file_protomcp_v1_annotations_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
+var file_protomcp_v1_annotations_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
 var file_protomcp_v1_annotations_proto_goTypes = []any{
 	(*ToolOptions)(nil),                 // 0: protomcp.v1.ToolOptions
 	(*ServiceOptions)(nil),              // 1: protomcp.v1.ServiceOptions
-	(*descriptorpb.MethodOptions)(nil),  // 2: google.protobuf.MethodOptions
-	(*descriptorpb.ServiceOptions)(nil), // 3: google.protobuf.ServiceOptions
+	(*PlaceholderBinding)(nil),          // 2: protomcp.v1.PlaceholderBinding
+	(*ResourceTemplateOptions)(nil),     // 3: protomcp.v1.ResourceTemplateOptions
+	(*ResourceListOptions)(nil),         // 4: protomcp.v1.ResourceListOptions
+	(*PromptOptions)(nil),               // 5: protomcp.v1.PromptOptions
+	(*ResourceListChangedOptions)(nil),  // 6: protomcp.v1.ResourceListChangedOptions
+	(*ElicitationOptions)(nil),          // 7: protomcp.v1.ElicitationOptions
+	(*descriptorpb.MethodOptions)(nil),  // 8: google.protobuf.MethodOptions
+	(*descriptorpb.ServiceOptions)(nil), // 9: google.protobuf.ServiceOptions
 }
 var file_protomcp_v1_annotations_proto_depIdxs = []int32{
-	2, // 0: protomcp.v1.tool:extendee -> google.protobuf.MethodOptions
-	3, // 1: protomcp.v1.service:extendee -> google.protobuf.ServiceOptions
-	0, // 2: protomcp.v1.tool:type_name -> protomcp.v1.ToolOptions
-	1, // 3: protomcp.v1.service:type_name -> protomcp.v1.ServiceOptions
-	4, // [4:4] is the sub-list for method output_type
-	4, // [4:4] is the sub-list for method input_type
-	2, // [2:4] is the sub-list for extension type_name
-	0, // [0:2] is the sub-list for extension extendee
-	0, // [0:0] is the sub-list for field type_name
+	2,  // 0: protomcp.v1.ResourceTemplateOptions.uri_bindings:type_name -> protomcp.v1.PlaceholderBinding
+	2,  // 1: protomcp.v1.ResourceListOptions.uri_bindings:type_name -> protomcp.v1.PlaceholderBinding
+	8,  // 2: protomcp.v1.tool:extendee -> google.protobuf.MethodOptions
+	8,  // 3: protomcp.v1.resource_template:extendee -> google.protobuf.MethodOptions
+	8,  // 4: protomcp.v1.resource_list:extendee -> google.protobuf.MethodOptions
+	8,  // 5: protomcp.v1.prompt:extendee -> google.protobuf.MethodOptions
+	8,  // 6: protomcp.v1.resource_list_changed:extendee -> google.protobuf.MethodOptions
+	9,  // 7: protomcp.v1.service:extendee -> google.protobuf.ServiceOptions
+	8,  // 8: protomcp.v1.elicitation:extendee -> google.protobuf.MethodOptions
+	0,  // 9: protomcp.v1.tool:type_name -> protomcp.v1.ToolOptions
+	3,  // 10: protomcp.v1.resource_template:type_name -> protomcp.v1.ResourceTemplateOptions
+	4,  // 11: protomcp.v1.resource_list:type_name -> protomcp.v1.ResourceListOptions
+	5,  // 12: protomcp.v1.prompt:type_name -> protomcp.v1.PromptOptions
+	6,  // 13: protomcp.v1.resource_list_changed:type_name -> protomcp.v1.ResourceListChangedOptions
+	1,  // 14: protomcp.v1.service:type_name -> protomcp.v1.ServiceOptions
+	7,  // 15: protomcp.v1.elicitation:type_name -> protomcp.v1.ElicitationOptions
+	16, // [16:16] is the sub-list for method output_type
+	16, // [16:16] is the sub-list for method input_type
+	9,  // [9:16] is the sub-list for extension type_name
+	2,  // [2:9] is the sub-list for extension extendee
+	0,  // [0:2] is the sub-list for field type_name
 }
 
 func init() { file_protomcp_v1_annotations_proto_init() }
@@ -261,8 +801,8 @@ func file_protomcp_v1_annotations_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_protomcp_v1_annotations_proto_rawDesc), len(file_protomcp_v1_annotations_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   2,
-			NumExtensions: 2,
+			NumMessages:   8,
+			NumExtensions: 7,
 			NumServices:   0,
 		},
 		GoTypes:           file_protomcp_v1_annotations_proto_goTypes,
