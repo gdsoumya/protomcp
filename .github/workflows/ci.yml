@@ -23,7 +23,7 @@ env:
 
 jobs:
   test:
-    name: Test (Go ${{ matrix.go }})
+    name: Go Test
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
