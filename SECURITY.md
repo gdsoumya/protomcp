@@ -23,9 +23,7 @@ latest versions.
 Please do **not** open a public GitHub issue for suspected security
 problems.
 
-Use GitHub's [private vulnerability reporting](https://github.com/gdsoumya/protomcp/security/advisories/new)
-to file a private advisory, or email the maintainer listed in
-[`go.mod`](./go.mod) with `SECURITY:` in the subject line.
+File a private advisory via GitHub's [private vulnerability reporting](https://github.com/gdsoumya/protomcp/security/advisories/new).
 
 Please include:
 
@@ -33,5 +31,6 @@ Please include:
 - Steps to reproduce or a minimal proof of concept.
 - The affected version(s) or commit SHA.
 
-You should expect an acknowledgement within a few business days. We
-coordinate disclosure with you before publishing any fix or advisory.
+You should expect an acknowledgement within a few business days.
+Disclosure is coordinated with you before any fix or advisory is
+published.

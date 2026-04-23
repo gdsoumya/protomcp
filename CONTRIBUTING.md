@@ -162,4 +162,4 @@ Conventional Commits style is preferred but not enforced. The body should explai
 
 ## Reporting a security issue
 
-Please do not open a public issue. Email the maintainers (see `go.mod` for current primary contact) with `SECURITY:` in the subject line.
+See [SECURITY.md](./SECURITY.md). Use GitHub's [private vulnerability reporting](https://github.com/gdsoumya/protomcp/security/advisories/new); do not open a public issue.
