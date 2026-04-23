@@ -203,7 +203,9 @@ func TestSubscribe_AuthorizedAlice_ReceivesUpdate(t *testing.T) {
 // TestSubscribe_BobOutOfScope_Rejected verifies the authz wrapper
 // refuses a subscription request whose URI falls outside the
 // principal's AllowedURIPrefixes. bob-token is scoped to tasks://1
-// only, so tasks://<anything-else> must be rejected as forbidden.
+// only; this test uses a URI that is guaranteed not to match that
+// prefix (deterministic, so no flakes against a random task id that
+// happens to start with "1").
 func TestSubscribe_BobOutOfScope_Rejected(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -215,9 +217,9 @@ func TestSubscribe_BobOutOfScope_Rejected(t *testing.T) {
 		t.Fatalf("connect: %v", err)
 	}
 
-	task := createTask(ctx, t, h.tasksClient, "alice-owned")
-
-	err = cs.Subscribe(ctx, &mcp.SubscribeParams{URI: "tasks://" + task.GetId()})
+	// "tasks://out-of-bobs-scope" has no prefix overlap with
+	// "tasks://1", so authz must reject.
+	err = cs.Subscribe(ctx, &mcp.SubscribeParams{URI: "tasks://out-of-bobs-scope"})
 	if err == nil {
 		t.Fatal("Subscribe succeeded for out-of-scope URI; want permission error")
 	}
