@@ -12,21 +12,16 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
-// ErrorHandler decides how a Go error raised by middleware or the tool
-// handler is surfaced to the MCP client. Exactly one of the returned
-// values must be non-nil: a non-nil *mcp.CallToolResult is delivered as
-// a successful JSON-RPC response (typically with IsError set); a
-// non-nil error is propagated to the SDK and becomes a JSON-RPC error.
+// ToolErrorHandler decides how a Go error is surfaced to the MCP
+// client. Return a *jsonrpc.Error to surface a JSON-RPC protocol error;
+// any other error type is wrapped by the SDK into a CallToolResult with
+// IsError=true.
 //
-// To ensure an error is delivered to the client as a JSON-RPC protocol
-// error (rather than being wrapped by the SDK into a CallToolResult with
-// IsError=true), return a *jsonrpc.Error. Any other error type is wrapped
-// by the SDK into a tool-result with IsError=true.
-type ErrorHandler func(ctx context.Context, req *mcp.CallToolRequest, err error) (*mcp.CallToolResult, error)
+// Alias for ErrorHandler[*mcp.CallToolRequest, *mcp.CallToolResult].
+type ToolErrorHandler = ErrorHandler[*mcp.CallToolRequest, *mcp.CallToolResult]
 
-// grpcCodeToJSONRPCCode maps a gRPC code to a JSON-RPC error code used by
-// DefaultErrorHandler. Values are drawn from the standard JSON-RPC error
-// range (-32000..-32099, server-defined) because the spec reserves
+// grpcCodeToJSONRPCCode maps a gRPC code to a JSON-RPC error code in
+// the server-defined range (-32000..-32099); the JSON-RPC spec reserves
 // -32700..-32600 for protocol-level failures.
 func grpcCodeToJSONRPCCode(c codes.Code) int64 {
 	switch c {
@@ -43,20 +38,13 @@ func grpcCodeToJSONRPCCode(c codes.Code) int64 {
 	}
 }
 
-// DefaultErrorHandler is the ErrorHandler applied when none is
-// configured via WithErrorHandler. Mapping:
-//
-//   - gRPC Unauthenticated / PermissionDenied / Canceled / DeadlineExceeded
-//     -> JSON-RPC error wrapped as a *jsonrpc.Error. The SDK routes
-//     *jsonrpc.Error as a real JSON-RPC protocol error; any other error
-//     type would be wrapped by the SDK into a CallToolResult with
-//     IsError=true, which is NOT what we want for these codes.
-//   - Any other gRPC status -> CallToolResult{IsError: true} whose text
-//     content is "Code: Message" and whose structured content is the
-//     protojson-serialized google.rpc.Status (preserves details).
-//   - Any non-gRPC error -> CallToolResult{IsError: true} whose text
-//     content is err.Error().
-func DefaultErrorHandler(ctx context.Context, req *mcp.CallToolRequest, err error) (*mcp.CallToolResult, error) {
+// DefaultToolErrorHandler is the fallback ToolErrorHandler. Maps
+// Unauthenticated / PermissionDenied / Canceled / DeadlineExceeded to
+// JSON-RPC protocol errors; any other gRPC status becomes a
+// CallToolResult{IsError: true} carrying the protojson-serialized
+// google.rpc.Status as StructuredContent; non-gRPC errors become an
+// IsError result with err.Error() as text.
+func DefaultToolErrorHandler(ctx context.Context, req *mcp.CallToolRequest, err error) (*mcp.CallToolResult, error) {
 	if err == nil {
 		return nil, nil
 	}
@@ -82,4 +70,25 @@ func DefaultErrorHandler(ctx context.Context, req *mcp.CallToolRequest, err erro
 		IsError: true,
 		Content: []mcp.Content{&mcp.TextContent{Text: err.Error()}},
 	}, nil
+}
+
+// grpcErrorToJSONRPC wraps err in a *jsonrpc.Error for primitives
+// without an IsError result shape (resources/read, resources/list,
+// prompts/get). gRPC status errors preserve their code; others map to
+// -32000.
+func grpcErrorToJSONRPC(err error) error {
+	if err == nil {
+		return nil
+	}
+	// JSON-RPC -32602 Invalid params for client-supplied cursor failures.
+	if IsInvalidCursorError(err) {
+		return &jsonrpc.Error{Code: -32602, Message: err.Error()}
+	}
+	if st, ok := status.FromError(err); ok {
+		return &jsonrpc.Error{
+			Code:    grpcCodeToJSONRPCCode(st.Code()),
+			Message: fmt.Sprintf("%s: %s", st.Code(), st.Message()),
+		}
+	}
+	return &jsonrpc.Error{Code: -32000, Message: err.Error()}
 }

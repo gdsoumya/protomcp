@@ -12,9 +12,9 @@ import (
 	protomcpv1 "github.com/gdsoumya/protomcp/pkg/api/gen/protomcp/v1"
 )
 
-// TestMiddleware_MutatesInputViaTypeAssertion verifies that a Middleware
+// TestMiddleware_MutatesInputViaTypeAssertion verifies that a ToolMiddleware
 // can type-assert g.Input to a concrete proto message and mutate it, and
-// that the mutation is visible to code that runs after the chain — i.e.,
+// that the mutation is visible to code that runs after the chain, i.e.,
 // the pointer semantics hold. The common case is injecting a tenant ID
 // from auth context into the request body.
 func TestMiddleware_MutatesInputViaTypeAssertion(t *testing.T) {
@@ -22,8 +22,8 @@ func TestMiddleware_MutatesInputViaTypeAssertion(t *testing.T) {
 	// convenient proto.Message we know is importable in tests.
 	in := &protomcpv1.ToolOptions{}
 
-	injector := func(next Handler) Handler {
-		return func(ctx context.Context, req *mcp.CallToolRequest, g *GRPCRequest) (*mcp.CallToolResult, error) {
+	injector := func(next ToolHandler) ToolHandler {
+		return func(ctx context.Context, req *mcp.CallToolRequest, g *GRPCData) (*mcp.CallToolResult, error) {
 			if to, ok := g.Input.(*protomcpv1.ToolOptions); ok {
 				to.Title = "injected by middleware"
 			}
@@ -31,15 +31,15 @@ func TestMiddleware_MutatesInputViaTypeAssertion(t *testing.T) {
 		}
 	}
 
-	s := New("t", "0.0.1", WithMiddleware(injector))
+	s := New("t", "0.0.1", WithToolMiddleware(injector))
 
 	var observed string
-	final := func(_ context.Context, _ *mcp.CallToolRequest, g *GRPCRequest) (*mcp.CallToolResult, error) {
+	final := func(_ context.Context, _ *mcp.CallToolRequest, g *GRPCData) (*mcp.CallToolResult, error) {
 		observed = g.Input.(*protomcpv1.ToolOptions).GetTitle()
 		return &mcp.CallToolResult{}, nil
 	}
 
-	_, err := s.Chain(final)(context.Background(), &mcp.CallToolRequest{}, &GRPCRequest{
+	_, err := s.ToolChain(final)(context.Background(), &mcp.CallToolRequest{}, &GRPCData{
 		Input:    in,
 		Metadata: metadata.MD{},
 	})
@@ -49,7 +49,7 @@ func TestMiddleware_MutatesInputViaTypeAssertion(t *testing.T) {
 	if observed != "injected by middleware" {
 		t.Errorf("final observed Title = %q, want %q", observed, "injected by middleware")
 	}
-	// The original pointer must reflect the mutation too — the generated
+	// The original pointer must reflect the mutation too, the generated
 	// tool handler closes over that pointer to make the upstream call.
 	if in.GetTitle() != "injected by middleware" {
 		t.Errorf("original pointer not mutated: %q", in.GetTitle())
@@ -63,8 +63,8 @@ func TestMiddleware_MutatesInputViaTypeAssertion(t *testing.T) {
 func TestMiddleware_MutatesInputViaReflection(t *testing.T) {
 	in := &protomcpv1.ToolOptions{}
 
-	genericInjector := func(next Handler) Handler {
-		return func(ctx context.Context, req *mcp.CallToolRequest, g *GRPCRequest) (*mcp.CallToolResult, error) {
+	genericInjector := func(next ToolHandler) ToolHandler {
+		return func(ctx context.Context, req *mcp.CallToolRequest, g *GRPCData) (*mcp.CallToolResult, error) {
 			if g.Input == nil {
 				return next(ctx, req, g)
 			}
@@ -76,11 +76,11 @@ func TestMiddleware_MutatesInputViaReflection(t *testing.T) {
 		}
 	}
 
-	s := New("t", "0.0.1", WithMiddleware(genericInjector))
-	final := func(_ context.Context, _ *mcp.CallToolRequest, g *GRPCRequest) (*mcp.CallToolResult, error) {
+	s := New("t", "0.0.1", WithToolMiddleware(genericInjector))
+	final := func(_ context.Context, _ *mcp.CallToolRequest, g *GRPCData) (*mcp.CallToolResult, error) {
 		return &mcp.CallToolResult{}, nil
 	}
-	_, err := s.Chain(final)(context.Background(), &mcp.CallToolRequest{}, &GRPCRequest{
+	_, err := s.ToolChain(final)(context.Background(), &mcp.CallToolRequest{}, &GRPCData{
 		Input:    in,
 		Metadata: metadata.MD{},
 	})
@@ -93,25 +93,25 @@ func TestMiddleware_MutatesInputViaReflection(t *testing.T) {
 }
 
 // TestMiddleware_InputPointerMatchesGeneratedHandler documents the
-// contract that the pointer stored in GRPCRequest.Input IS the pointer
+// contract that the pointer stored in GRPCData.Input IS the pointer
 // the generated handler uses for the upstream call. The test verifies
 // pointer identity (same memory) rather than equal values.
 func TestMiddleware_InputPointerMatchesGeneratedHandler(t *testing.T) {
 	original := &protomcpv1.ToolOptions{}
-	g := &GRPCRequest{Input: original, Metadata: metadata.MD{}}
+	g := &GRPCData{Input: original, Metadata: metadata.MD{}}
 
 	var seen proto.Message
-	mw := func(next Handler) Handler {
-		return func(ctx context.Context, req *mcp.CallToolRequest, g *GRPCRequest) (*mcp.CallToolResult, error) {
+	mw := func(next ToolHandler) ToolHandler {
+		return func(ctx context.Context, req *mcp.CallToolRequest, g *GRPCData) (*mcp.CallToolResult, error) {
 			seen = g.Input
 			return next(ctx, req, g)
 		}
 	}
-	s := New("t", "0.0.1", WithMiddleware(mw))
-	final := func(_ context.Context, _ *mcp.CallToolRequest, _ *GRPCRequest) (*mcp.CallToolResult, error) {
+	s := New("t", "0.0.1", WithToolMiddleware(mw))
+	final := func(_ context.Context, _ *mcp.CallToolRequest, _ *GRPCData) (*mcp.CallToolResult, error) {
 		return &mcp.CallToolResult{}, nil
 	}
-	_, _ = s.Chain(final)(context.Background(), &mcp.CallToolRequest{}, g)
+	_, _ = s.ToolChain(final)(context.Background(), &mcp.CallToolRequest{}, g)
 
 	// Pointer equality: seen is the same &ToolOptions{} we passed in.
 	if seen != proto.Message(original) {

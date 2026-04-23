@@ -6,53 +6,54 @@
 package protomcp
 
 import (
-	"context"
-
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/proto"
 )
 
-// GRPCRequest bundles everything a Middleware can inspect or mutate
-// before the upstream gRPC call is made. Collecting these fields into
-// a single struct keeps the Handler signature small and, more
-// importantly, lets us add new fields in the future without breaking
-// every existing Middleware.
-type GRPCRequest struct {
-	// Input is the typed proto request the generated tool handler will
-	// pass to the gRPC client. Middleware may mutate it — either by type
-	// assertion to the concrete message, or generically via proto
-	// reflection — and mutations persist because Input is a pointer to
-	// the same value the downstream call uses:
-	//
-	//	if r, ok := g.Input.(*greeterv1.HelloRequest); ok {
-	//	    r.TenantId = tenantFromCtx(ctx)
-	//	}
+// GRPCData bundles the gRPC side of one MCP call. A single *GRPCData
+// flows through the whole pipeline; Output is nil until the final
+// handler runs.
+type GRPCData struct {
+	// Input is the typed proto request.
 	Input proto.Message
 
-	// Metadata is the outgoing gRPC metadata that will be attached to
-	// the upstream call via metadata.NewOutgoingContext. Middleware
-	// appends keys; the final Handler consumes the whole MD at the
-	// gRPC-call boundary.
+	// Output is the typed proto response; nil before the final handler runs.
+	Output proto.Message
+
+	// Metadata is the outgoing gRPC metadata. Prefer SetMetadata for
+	// values from untrusted sources.
 	Metadata metadata.MD
 }
 
-// Handler is the inner step in the middleware chain. The final Handler
-// (supplied by generated code) makes the upstream gRPC call using the
-// accumulated GRPCRequest; each intermediate Handler is the composition
-// of a Middleware wrapping the next Handler.
-type Handler func(ctx context.Context, req *mcp.CallToolRequest, g *GRPCRequest) (*mcp.CallToolResult, error)
+// SetMetadata writes key=value into the outgoing gRPC metadata after
+// running value through SanitizeMetadataValue, so CR/LF/NUL cannot
+// reach the upstream hop. Any existing values for key are replaced.
+func (g *GRPCData) SetMetadata(key, value string) {
+	if g == nil {
+		return
+	}
+	if g.Metadata == nil {
+		g.Metadata = metadata.MD{}
+	}
+	g.Metadata.Set(key, SanitizeMetadataValue(value))
+}
 
-// Middleware wraps a Handler. A single Middleware can inspect the MCP
-// request, read values stashed on ctx by outer HTTP middleware, mutate
-// g.Input, append to g.Metadata, short-circuit with an error, or call
-// next to continue the chain.
+// MCPData bundles the MCP request and the current result for a
+// ResultProcessor. Output assignments by a processor replace Output for
+// subsequent processors.
+type MCPData[Req, Res any] struct {
+	Input  Req
+	Output Res
+}
+
+// ToolHandler is the inner step in the tool-call middleware chain.
 //
-// Middleware is the MCP-call-level seam: it runs inside the tool handler
-// after the SDK has parsed JSON-RPC. HTTP-layer concerns (authentication,
-// CORS, rate limiting, access logs) belong in stdlib http.Handler
-// middleware wrapped around the Server itself (Server implements
-// http.Handler — see Server.ServeHTTP). Result-shape concerns
-// (redaction, enrichment) may go either in a Middleware's post-call
-// section (after `next(…)` returns) or in a dedicated ResultProcessor.
-type Middleware func(next Handler) Handler
+// Alias for Handler[*mcp.CallToolRequest, *mcp.CallToolResult].
+type ToolHandler = Handler[*mcp.CallToolRequest, *mcp.CallToolResult]
+
+// ToolMiddleware wraps a ToolHandler. HTTP-layer concerns belong in
+// http.Handler middleware wrapped around the Server.
+//
+// Alias for Middleware[*mcp.CallToolRequest, *mcp.CallToolResult].
+type ToolMiddleware = Middleware[*mcp.CallToolRequest, *mcp.CallToolResult]

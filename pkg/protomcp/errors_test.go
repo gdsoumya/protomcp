@@ -15,7 +15,7 @@ import (
 
 // TestDefaultErrorHandlerAuthEscalates verifies that Unauthenticated /
 // PermissionDenied / Canceled / DeadlineExceeded gRPC statuses are
-// surfaced as JSON-RPC errors wrapped in *jsonrpc.Error — the SDK only
+// surfaced as JSON-RPC errors wrapped in *jsonrpc.Error, the SDK only
 // treats an error as a protocol-level failure when it is a *jsonrpc.Error;
 // any other error type gets folded into an IsError CallToolResult.
 func TestDefaultErrorHandlerAuthEscalates(t *testing.T) {
@@ -28,7 +28,7 @@ func TestDefaultErrorHandlerAuthEscalates(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.String(), func(t *testing.T) {
 			err := status.Error(c, "nope")
-			res, gotErr := DefaultErrorHandler(context.Background(), &mcp.CallToolRequest{}, err)
+			res, gotErr := DefaultToolErrorHandler(context.Background(), &mcp.CallToolRequest{}, err)
 			if res != nil {
 				t.Fatalf("expected nil result for %s, got %+v", c, res)
 			}
@@ -55,7 +55,7 @@ func TestDefaultErrorHandlerAuthEscalates(t *testing.T) {
 // carrying the serialized google.rpc.Status.
 func TestDefaultErrorHandlerOtherGRPCStatus(t *testing.T) {
 	err := status.Error(codes.NotFound, "missing widget")
-	res, gotErr := DefaultErrorHandler(context.Background(), &mcp.CallToolRequest{}, err)
+	res, gotErr := DefaultToolErrorHandler(context.Background(), &mcp.CallToolRequest{}, err)
 	if gotErr != nil {
 		t.Fatalf("expected nil error, got %v", gotErr)
 	}
@@ -89,7 +89,7 @@ func TestDefaultErrorHandlerOtherGRPCStatus(t *testing.T) {
 // CallToolResult with IsError=true and the error message as text.
 func TestDefaultErrorHandlerPlainError(t *testing.T) {
 	err := errors.New("boom")
-	res, gotErr := DefaultErrorHandler(context.Background(), &mcp.CallToolRequest{}, err)
+	res, gotErr := DefaultToolErrorHandler(context.Background(), &mcp.CallToolRequest{}, err)
 	if gotErr != nil {
 		t.Fatalf("expected nil error, got %v", gotErr)
 	}
@@ -117,7 +117,7 @@ func TestServerHandleErrorAdaptsShapes(t *testing.T) {
 	s := New("t", "0.0.1")
 
 	// Plain error path: expect a CallToolResult, nil err.
-	res, err := s.HandleError(context.Background(), &mcp.CallToolRequest{}, errors.New("bad"))
+	res, err := s.HandleToolError(context.Background(), &mcp.CallToolRequest{}, errors.New("bad"))
 	if err != nil {
 		t.Fatalf("err = %v, want nil", err)
 	}
@@ -127,7 +127,7 @@ func TestServerHandleErrorAdaptsShapes(t *testing.T) {
 
 	// Auth error path: expect no result but a JSON-RPC error.
 	authErr := status.Error(codes.Unauthenticated, "deny")
-	res, err = s.HandleError(context.Background(), &mcp.CallToolRequest{}, authErr)
+	res, err = s.HandleToolError(context.Background(), &mcp.CallToolRequest{}, authErr)
 	if res != nil {
 		t.Fatalf("res = %+v, want nil", res)
 	}
@@ -136,13 +136,33 @@ func TestServerHandleErrorAdaptsShapes(t *testing.T) {
 	}
 
 	// Nil error path: both returns nil.
-	res, err = s.HandleError(context.Background(), &mcp.CallToolRequest{}, nil)
+	res, err = s.HandleToolError(context.Background(), &mcp.CallToolRequest{}, nil)
 	if res != nil || err != nil {
 		t.Fatalf("got (%v, %v), want (nil, nil)", res, err)
 	}
 }
 
-// TestWithErrorHandlerOverrides verifies a custom ErrorHandler is
+// TestFinishToolCall_FallbackOnNilNilFromHandler verifies that when a
+// custom ToolErrorHandler returns (nil, nil), FinishToolCall does NOT
+// panic, it falls back to the original error so the caller always
+// sees a real response. Parallel assertions exist in prompt_test.go
+// and resource_test.go for the other three finishers.
+func TestFinishToolCall_FallbackOnNilNilFromHandler(t *testing.T) {
+	buggy := func(_ context.Context, _ *mcp.CallToolRequest, _ error) (*mcp.CallToolResult, error) {
+		return nil, nil
+	}
+	sentinel := errors.New("boom")
+	s := New("t", "0.0.1", WithToolErrorHandler(buggy))
+	res, _, gotErr := s.FinishToolCall(context.Background(), &mcp.CallToolRequest{}, nil, nil, sentinel)
+	if res != nil {
+		t.Errorf("res = %+v, want nil (fell-back path returns err, no result)", res)
+	}
+	if !errors.Is(gotErr, sentinel) {
+		t.Errorf("err = %v, want the original sentinel", gotErr)
+	}
+}
+
+// TestWithErrorHandlerOverrides verifies a custom ToolErrorHandler is
 // preferred over the default.
 func TestWithErrorHandlerOverrides(t *testing.T) {
 	called := false
@@ -150,8 +170,8 @@ func TestWithErrorHandlerOverrides(t *testing.T) {
 		called = true
 		return &mcp.CallToolResult{IsError: true, Content: []mcp.Content{&mcp.TextContent{Text: "custom"}}}, nil
 	}
-	s := New("t", "0.0.1", WithErrorHandler(custom))
-	res, err := s.HandleError(context.Background(), &mcp.CallToolRequest{}, errors.New("x"))
+	s := New("t", "0.0.1", WithToolErrorHandler(custom))
+	res, err := s.HandleToolError(context.Background(), &mcp.CallToolRequest{}, errors.New("x"))
 	if !called {
 		t.Fatalf("custom handler not called")
 	}

@@ -8,23 +8,14 @@ import (
 	"google.golang.org/protobuf/reflect/protoreflect"
 )
 
+// clearOutputOnlyMaxDepth bounds recursion so self-referential protos
+// (Struct/Value) cannot exhaust the stack on a malicious payload.
+// Fields below the limit retain their caller-supplied value.
+const clearOutputOnlyMaxDepth = 100
+
 // ClearOutputOnly zeros every field reachable from m whose descriptor
-// carries google.api.field_behavior = OUTPUT_ONLY (AIP-203). Generated
-// tool handlers call it after protojson.Unmarshal so the LLM (or a
-// crafted client) cannot populate server-computed fields that the
-// advertised input schema already hides.
-//
-// The walk is recursive: it descends into non-cleared message fields,
-// each element of repeated<message> fields, and each value of
-// map<K, message> fields. For a field that is itself OUTPUT_ONLY,
-// the whole value is cleared (including any nested content) — we do
-// not recurse into an already-cleared branch. A nil or invalid message
-// is a no-op.
-//
-// Protobuf instances produced by protojson.Unmarshal are trees, so
-// recursion terminates naturally without a cycle guard. Self-
-// referential message types (e.g. a tree node with a child of its own
-// type) simply have a finite depth at runtime.
+// carries google.api.field_behavior = OUTPUT_ONLY (AIP-203). Recursion
+// is capped at clearOutputOnlyMaxDepth.
 func ClearOutputOnly(m proto.Message) {
 	if m == nil {
 		return
@@ -33,13 +24,15 @@ func ClearOutputOnly(m proto.Message) {
 	if !r.IsValid() {
 		return
 	}
-	clearOutputOnlyReflect(r)
+	clearOutputOnlyReflect(r, 0)
 }
 
-// clearOutputOnlyReflect is the recursive worker. It mutates r in
-// place and returns nothing; the caller should not observe anything
-// beyond the zeroed fields.
-func clearOutputOnlyReflect(r protoreflect.Message) {
+// clearOutputOnlyReflect is the recursive worker; depth short-circuits
+// at clearOutputOnlyMaxDepth.
+func clearOutputOnlyReflect(r protoreflect.Message, depth int) {
+	if depth >= clearOutputOnlyMaxDepth {
+		return
+	}
 	fields := r.Descriptor().Fields()
 	for i := range fields.Len() {
 		fd := fields.Get(i)
@@ -49,10 +42,9 @@ func clearOutputOnlyReflect(r protoreflect.Message) {
 			continue
 		}
 
-		// Only message-valued branches need recursion — scalar, enum,
-		// and bytes fields can't contain OUTPUT_ONLY annotations below
-		// them. For maps the field-level Kind is synthetic MessageKind
-		// (the map entry); we check MapValue().Kind() separately below.
+		// Only message-valued branches need recursion. For maps the
+		// field Kind is MessageKind (the map entry); MapValue().Kind()
+		// is checked below.
 		if fd.Kind() != protoreflect.MessageKind && fd.Kind() != protoreflect.GroupKind {
 			continue
 		}
@@ -62,28 +54,26 @@ func clearOutputOnlyReflect(r protoreflect.Message) {
 
 		switch {
 		case fd.IsMap():
-			// Only map values carry messages; keys are always scalar.
 			if fd.MapValue().Kind() != protoreflect.MessageKind {
 				continue
 			}
 			r.Get(fd).Map().Range(func(_ protoreflect.MapKey, v protoreflect.Value) bool {
-				clearOutputOnlyReflect(v.Message())
+				clearOutputOnlyReflect(v.Message(), depth+1)
 				return true
 			})
 		case fd.IsList():
 			list := r.Get(fd).List()
 			for j := range list.Len() {
-				clearOutputOnlyReflect(list.Get(j).Message())
+				clearOutputOnlyReflect(list.Get(j).Message(), depth+1)
 			}
 		default:
-			clearOutputOnlyReflect(r.Get(fd).Message())
+			clearOutputOnlyReflect(r.Get(fd).Message(), depth+1)
 		}
 	}
 }
 
 // hasOutputOnly reports whether fd's FieldBehavior list includes
-// OUTPUT_ONLY. AIP-203 allows multiple behaviors on one field, so we
-// check for membership rather than equality.
+// OUTPUT_ONLY. AIP-203 allows multiple behaviors per field.
 func hasOutputOnly(fd protoreflect.FieldDescriptor) bool {
 	opts := fd.Options()
 	if opts == nil {

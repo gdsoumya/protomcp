@@ -16,38 +16,38 @@ import (
 )
 
 // runChainWithError wires a single middleware that short-circuits with err
-// into a fresh Server (optionally with a custom ErrorHandler) and drives
+// into a fresh Server (optionally with a custom ToolErrorHandler) and drives
 // the "middleware → Server.Chain → Server.HandleError" path the way
 // generated code does. It returns what a real tool call would ultimately
 // surface to the SDK.
 func runChainWithError(t *testing.T, err error, opts ...ServerOption) (*mcp.CallToolResult, json.RawMessage, error) {
 	t.Helper()
-	mw := func(next Handler) Handler {
-		return func(ctx context.Context, req *mcp.CallToolRequest, g *GRPCRequest) (*mcp.CallToolResult, error) {
+	mw := func(next ToolHandler) ToolHandler {
+		return func(ctx context.Context, req *mcp.CallToolRequest, g *GRPCData) (*mcp.CallToolResult, error) {
 			return nil, err
 		}
 	}
-	opts = append([]ServerOption{WithMiddleware(mw)}, opts...)
+	opts = append([]ServerOption{WithToolMiddleware(mw)}, opts...)
 	s := New("t", "0.0.1", opts...)
 
-	final := func(ctx context.Context, _ *mcp.CallToolRequest, g *GRPCRequest) (*mcp.CallToolResult, error) {
+	final := func(ctx context.Context, _ *mcp.CallToolRequest, g *GRPCData) (*mcp.CallToolResult, error) {
 		t.Fatalf("final handler should not run when middleware short-circuits")
 		return nil, nil
 	}
-	_, cerr := s.Chain(final)(context.Background(), &mcp.CallToolRequest{}, &GRPCRequest{Metadata: metadata.MD{}})
+	_, cerr := s.ToolChain(final)(context.Background(), &mcp.CallToolRequest{}, &GRPCData{Metadata: metadata.MD{}})
 	if cerr == nil {
 		return nil, nil, nil
 	}
 	// runChainWithError keeps the three-tuple shape so callers can still
 	// pattern-match on a future raw-payload return without touching every
 	// assertion. Today HandleError returns just (result, err).
-	res, herr := s.HandleError(context.Background(), &mcp.CallToolRequest{}, cerr)
+	res, herr := s.HandleToolError(context.Background(), &mcp.CallToolRequest{}, cerr)
 	return res, nil, herr
 }
 
 // TestMiddlewareErrorThroughDefaultHandler_NotFound verifies a gRPC
 // NotFound returned by a middleware is folded into an IsError result by
-// DefaultErrorHandler — exercising the full middleware → Chain →
+// DefaultToolErrorHandler, exercising the full middleware → Chain →
 // HandleError path that generated code runs.
 func TestMiddlewareErrorThroughDefaultHandler_NotFound(t *testing.T) {
 	err := status.Error(codes.NotFound, "no such thing")
@@ -109,7 +109,7 @@ func TestMiddlewareErrorThroughDefaultHandler_Unauthenticated(t *testing.T) {
 	if gotErr == nil {
 		t.Fatalf("expected non-nil error for Unauthenticated")
 	}
-	// DefaultErrorHandler must wrap the auth codes in *jsonrpc.Error so
+	// DefaultToolErrorHandler must wrap the auth codes in *jsonrpc.Error so
 	// the SDK surfaces them as protocol-level errors.
 	var je *jsonrpc.Error
 	if !errors.As(gotErr, &je) {
@@ -121,7 +121,7 @@ func TestMiddlewareErrorThroughDefaultHandler_Unauthenticated(t *testing.T) {
 }
 
 // TestCustomErrorHandlerHandlesMiddlewareError verifies that a custom
-// ErrorHandler — not DefaultErrorHandler — is the one invoked when a
+// ToolErrorHandler, not DefaultToolErrorHandler, is the one invoked when a
 // middleware short-circuits with an error.
 func TestCustomErrorHandlerHandlesMiddlewareError(t *testing.T) {
 	var (
@@ -138,7 +138,7 @@ func TestCustomErrorHandlerHandlesMiddlewareError(t *testing.T) {
 		}, nil
 	}
 
-	res, _, gotErr := runChainWithError(t, sawAuth, WithErrorHandler(custom))
+	res, _, gotErr := runChainWithError(t, sawAuth, WithToolErrorHandler(custom))
 	if !called {
 		t.Fatalf("custom handler was not invoked")
 	}
@@ -157,9 +157,9 @@ func TestCustomErrorHandlerHandlesMiddlewareError(t *testing.T) {
 }
 
 // TestCustomErrorHandlerHandlesInnerHandlerError verifies that the
-// custom ErrorHandler also runs when the innermost Handler (supplied by
+// custom ToolErrorHandler also runs when the innermost ToolHandler (supplied by
 // generated code) returns the error, not just when middleware does.
-// Generated code funnels both through Server.HandleError — this test is
+// Generated code funnels both through Server.HandleError, this test is
 // the direct simulation of that path.
 func TestCustomErrorHandlerHandlesInnerHandlerError(t *testing.T) {
 	var called bool
@@ -170,17 +170,17 @@ func TestCustomErrorHandlerHandlesInnerHandlerError(t *testing.T) {
 			Content: []mcp.Content{&mcp.TextContent{Text: "custom-inner:" + err.Error()}},
 		}, nil
 	}
-	s := New("t", "0.0.1", WithErrorHandler(custom))
+	s := New("t", "0.0.1", WithToolErrorHandler(custom))
 
 	inner := errors.New("inner kaboom")
-	final := func(_ context.Context, _ *mcp.CallToolRequest, g *GRPCRequest) (*mcp.CallToolResult, error) {
+	final := func(_ context.Context, _ *mcp.CallToolRequest, g *GRPCData) (*mcp.CallToolResult, error) {
 		return nil, inner
 	}
-	_, err := s.Chain(final)(context.Background(), &mcp.CallToolRequest{}, &GRPCRequest{Metadata: metadata.MD{}})
+	_, err := s.ToolChain(final)(context.Background(), &mcp.CallToolRequest{}, &GRPCData{Metadata: metadata.MD{}})
 	if err == nil {
 		t.Fatalf("expected chain to surface inner error")
 	}
-	res, gotErr := s.HandleError(context.Background(), &mcp.CallToolRequest{}, err)
+	res, gotErr := s.HandleToolError(context.Background(), &mcp.CallToolRequest{}, err)
 	if !called {
 		t.Fatalf("custom handler was not invoked for inner error")
 	}
@@ -197,13 +197,13 @@ func TestCustomErrorHandlerHandlesInnerHandlerError(t *testing.T) {
 
 // TestChainThreeMiddlewareMetadataAccumulation verifies that three
 // stacked middlewares each writing a distinct metadata key are all
-// observed by the innermost Handler, proving metadata.MD threads through
+// observed by the innermost ToolHandler, proving metadata.MD threads through
 // the full chain rather than being shadowed by an intermediate layer.
 func TestChainThreeMiddlewareMetadataAccumulation(t *testing.T) {
 	var order []string
-	add := func(name, key, val string) Middleware {
-		return func(next Handler) Handler {
-			return func(ctx context.Context, req *mcp.CallToolRequest, g *GRPCRequest) (*mcp.CallToolResult, error) {
+	add := func(name, key, val string) ToolMiddleware {
+		return func(next ToolHandler) ToolHandler {
+			return func(ctx context.Context, req *mcp.CallToolRequest, g *GRPCData) (*mcp.CallToolResult, error) {
 				order = append(order, name)
 				g.Metadata.Set(key, val)
 				return next(ctx, req, g)
@@ -212,7 +212,7 @@ func TestChainThreeMiddlewareMetadataAccumulation(t *testing.T) {
 	}
 
 	s := New("t", "0.0.1",
-		WithMiddleware(
+		WithToolMiddleware(
 			add("a", "x-a", "1"),
 			add("b", "x-b", "2"),
 			add("c", "x-c", "3"),
@@ -220,12 +220,12 @@ func TestChainThreeMiddlewareMetadataAccumulation(t *testing.T) {
 	)
 
 	var seen metadata.MD
-	final := func(_ context.Context, _ *mcp.CallToolRequest, g *GRPCRequest) (*mcp.CallToolResult, error) {
+	final := func(_ context.Context, _ *mcp.CallToolRequest, g *GRPCData) (*mcp.CallToolResult, error) {
 		seen = g.Metadata
 		return &mcp.CallToolResult{}, nil
 	}
 
-	if _, err := s.Chain(final)(context.Background(), &mcp.CallToolRequest{}, &GRPCRequest{Metadata: metadata.MD{}}); err != nil {
+	if _, err := s.ToolChain(final)(context.Background(), &mcp.CallToolRequest{}, &GRPCData{Metadata: metadata.MD{}}); err != nil {
 		t.Fatalf("chain: %v", err)
 	}
 
@@ -240,14 +240,14 @@ func TestChainThreeMiddlewareMetadataAccumulation(t *testing.T) {
 }
 
 // TestChainNilFinalNoMiddleware documents the shape of Server.Chain when
-// given a nil final Handler. With no middleware the composition loop is
-// a no-op and the returned Handler is itself nil — invoking it would
+// given a nil final ToolHandler. With no middleware the composition loop is
+// a no-op and the returned ToolHandler is itself nil, invoking it would
 // nil-function-call panic, so callers must never pass nil. This test
 // pins the documented behavior so a future refactor that silently
 // changes it is caught.
 func TestChainNilFinalNoMiddleware(t *testing.T) {
 	s := New("t", "0.0.1")
-	got := s.Chain(nil)
+	got := s.ToolChain(nil)
 	if got != nil {
 		t.Fatalf("Chain(nil) with no middleware = %v, want nil", got)
 	}
@@ -255,22 +255,22 @@ func TestChainNilFinalNoMiddleware(t *testing.T) {
 
 // TestChainNilFinalWithMiddlewarePanics documents the Chain(nil)
 // contract when middleware is configured: the first middleware that
-// actually calls next(ctx, req, g) will encounter a nil Handler and
-// nil-function-call panic at invocation time. Middleware that
+// actually calls next(ctx, req, g) will encounter a nil ToolHandler and
+// nil-function-call panic at invocation time. ToolMiddleware that
 // short-circuits without calling next remains safe. Callers must never
-// pass nil as the final Handler; generated code always supplies one.
+// pass nil as the final ToolHandler; generated code always supplies one.
 func TestChainNilFinalWithMiddlewarePanics(t *testing.T) {
-	// A passthrough middleware that calls next — this is what exposes
-	// the nil Handler.
-	mw := func(next Handler) Handler {
-		return func(ctx context.Context, req *mcp.CallToolRequest, g *GRPCRequest) (*mcp.CallToolResult, error) {
+	// A passthrough middleware that calls next, this is what exposes
+	// the nil ToolHandler.
+	mw := func(next ToolHandler) ToolHandler {
+		return func(ctx context.Context, req *mcp.CallToolRequest, g *GRPCData) (*mcp.CallToolResult, error) {
 			return next(ctx, req, g)
 		}
 	}
-	s := New("t", "0.0.1", WithMiddleware(mw))
-	chain := s.Chain(nil)
+	s := New("t", "0.0.1", WithToolMiddleware(mw))
+	chain := s.ToolChain(nil)
 	if chain == nil {
-		t.Fatalf("Chain(nil) with middleware must still return a non-nil composed Handler")
+		t.Fatalf("Chain(nil) with middleware must still return a non-nil composed ToolHandler")
 	}
 
 	defer func() {
@@ -278,11 +278,11 @@ func TestChainNilFinalWithMiddlewarePanics(t *testing.T) {
 			t.Fatalf("expected panic when passthrough middleware invokes nil final")
 		}
 	}()
-	_, _ = chain(context.Background(), &mcp.CallToolRequest{}, &GRPCRequest{Metadata: metadata.MD{}})
+	_, _ = chain(context.Background(), &mcp.CallToolRequest{}, &GRPCData{Metadata: metadata.MD{}})
 }
 
 // TestMustParseSchemaPanicMessageMentionsPackage verifies the panic
-// message from MustParseSchema is clearly attributable to protomcp —
+// message from MustParseSchema is clearly attributable to protomcp ,
 // generated code uses it at package init so failures must be easy to
 // locate.
 func TestMustParseSchemaPanicMessageMentionsPackage(t *testing.T) {

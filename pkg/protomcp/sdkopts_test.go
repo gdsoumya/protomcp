@@ -44,7 +44,7 @@ func TestWithSDKOptions_LoggerWiredThrough(t *testing.T) {
 		t.Fatalf("ListTools: %v", err)
 	}
 
-	// We don't care about the exact text — we care that SOMETHING was
+	// We don't care about the exact text, we care that SOMETHING was
 	// written. If the Logger were ignored, the buffer would be empty.
 	if buf.Len() == 0 {
 		t.Errorf("WithSDKOptions(Logger) did not propagate: buffer empty")
@@ -79,7 +79,7 @@ func TestWithSDKOptions_InstructionsWiredThrough(t *testing.T) {
 }
 
 // TestWithHTTPOptions_JSONResponse verifies that setting JSONResponse
-// on StreamableHTTPOptions actually reaches the HTTP transport —
+// on StreamableHTTPOptions actually reaches the HTTP transport ,
 // JSONResponse mode returns application/json responses instead of the
 // SSE stream that the default transport emits.
 func TestWithHTTPOptions_JSONResponse(t *testing.T) {
@@ -118,9 +118,9 @@ func TestOptionsOrderingAllowsPropagation(t *testing.T) {
 	// Apply unrelated options on either side of WithSDKOptions to make
 	// sure our post-apply construction holds regardless of position.
 	s := New("t", "0.0.1",
-		WithMiddleware(noopMiddleware()),
+		WithToolMiddleware(noopMiddleware()),
 		WithSDKOptions(&mcp.ServerOptions{Instructions: "ordering works"}),
-		WithMiddleware(noopMiddleware()),
+		WithToolMiddleware(noopMiddleware()),
 	)
 
 	client := mcp.NewClient(&mcp.Implementation{Name: "c", Version: "0.0.1"}, nil)
@@ -139,6 +139,6 @@ func TestOptionsOrderingAllowsPropagation(t *testing.T) {
 	}
 }
 
-func noopMiddleware() Middleware {
-	return func(next Handler) Handler { return next }
+func noopMiddleware() ToolMiddleware {
+	return func(next ToolHandler) ToolHandler { return next }
 }

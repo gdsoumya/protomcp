@@ -5,11 +5,13 @@ package protomcp_test
 import (
 	"testing"
 
+	"google.golang.org/protobuf/types/known/structpb"
+
 	authv1 "github.com/gdsoumya/protomcp/pkg/api/gen/examples/auth/v1"
 	"github.com/gdsoumya/protomcp/pkg/protomcp"
 )
 
-// TestClearOutputOnly_TopLevelScalar — the canonical case: a message
+// TestClearOutputOnly_TopLevelScalar, the canonical case: a message
 // whose only fields are OUTPUT_ONLY scalars. Every field must be zeroed.
 func TestClearOutputOnly_TopLevelScalar(t *testing.T) {
 	m := &authv1.WhoAmIResponse{UserId: "alice", Tenant: "acme"}
@@ -22,14 +24,14 @@ func TestClearOutputOnly_TopLevelScalar(t *testing.T) {
 	}
 }
 
-// TestClearOutputOnly_NestedMessage — OUTPUT_ONLY inside a nested
+// TestClearOutputOnly_NestedMessage, OUTPUT_ONLY inside a nested
 // message field. This is the bug the original review was worried
 // about: without recursion, the inner field leaks through.
 func TestClearOutputOnly_NestedMessage(t *testing.T) {
 	m := &authv1.TestNested{
 		Inner: &authv1.TestInner{
-			ServerId: "admin", // OUTPUT_ONLY — must be cleared
-			UserName: "alice", // regular — must survive
+			ServerId: "admin", // OUTPUT_ONLY, must be cleared
+			UserName: "alice", // regular, must survive
 		},
 	}
 	protomcp.ClearOutputOnly(m)
@@ -44,7 +46,7 @@ func TestClearOutputOnly_NestedMessage(t *testing.T) {
 	}
 }
 
-// TestClearOutputOnly_OutputOnlyMessageField — when the MESSAGE field
+// TestClearOutputOnly_OutputOnlyMessageField, when the MESSAGE field
 // itself is OUTPUT_ONLY, the whole nested value is cleared. No recursion
 // needed (or performed).
 func TestClearOutputOnly_OutputOnlyMessageField(t *testing.T) {
@@ -61,7 +63,7 @@ func TestClearOutputOnly_OutputOnlyMessageField(t *testing.T) {
 	}
 }
 
-// TestClearOutputOnly_RepeatedMessages — recursive clearing must reach
+// TestClearOutputOnly_RepeatedMessages, recursive clearing must reach
 // every element of a repeated<Message> field.
 func TestClearOutputOnly_RepeatedMessages(t *testing.T) {
 	m := &authv1.TestRepeatedMessages{
@@ -85,7 +87,7 @@ func TestClearOutputOnly_RepeatedMessages(t *testing.T) {
 	}
 }
 
-// TestClearOutputOnly_MapMessages — each message-valued entry in a
+// TestClearOutputOnly_MapMessages, each message-valued entry in a
 // map must be recursively cleared; the map keys and structure survive.
 func TestClearOutputOnly_MapMessages(t *testing.T) {
 	m := &authv1.TestMapMessages{
@@ -108,7 +110,7 @@ func TestClearOutputOnly_MapMessages(t *testing.T) {
 	}
 }
 
-// TestClearOutputOnly_OneofOutputOnlySelected — if the OUTPUT_ONLY
+// TestClearOutputOnly_OneofOutputOnlySelected, if the OUTPUT_ONLY
 // member of a oneof is the currently-selected one, the oneof must be
 // cleared. Has() on the oneof reports false afterwards.
 func TestClearOutputOnly_OneofOutputOnlySelected(t *testing.T) {
@@ -121,7 +123,7 @@ func TestClearOutputOnly_OneofOutputOnlySelected(t *testing.T) {
 	}
 }
 
-// TestClearOutputOnly_OneofRegularSelected — when a non-OUTPUT_ONLY
+// TestClearOutputOnly_OneofRegularSelected, when a non-OUTPUT_ONLY
 // oneof member is selected, Clear on the OUTPUT_ONLY sibling is a
 // no-op. The selected member must survive.
 func TestClearOutputOnly_OneofRegularSelected(t *testing.T) {
@@ -138,7 +140,7 @@ func TestClearOutputOnly_OneofRegularSelected(t *testing.T) {
 	}
 }
 
-// TestClearOutputOnly_RepeatedScalarOutputOnly — OUTPUT_ONLY on a
+// TestClearOutputOnly_RepeatedScalarOutputOnly, OUTPUT_ONLY on a
 // repeated scalar field clears the entire list.
 func TestClearOutputOnly_RepeatedScalarOutputOnly(t *testing.T) {
 	m := &authv1.TestRepeatedOutputOnlyScalar{
@@ -154,7 +156,7 @@ func TestClearOutputOnly_RepeatedScalarOutputOnly(t *testing.T) {
 	}
 }
 
-// TestClearOutputOnly_NoLeafAnnotation — recursing into a message
+// TestClearOutputOnly_NoLeafAnnotation, recursing into a message
 // type with no OUTPUT_ONLY fields anywhere must be a no-op but not
 // panic. WhoAmIRequest is empty; TestInner has a user field that
 // must survive when called directly.
@@ -166,7 +168,7 @@ func TestClearOutputOnly_NoChangeForRegularFields(t *testing.T) {
 	}
 }
 
-// TestClearOutputOnly_NilSafe — generated code should never pass nil,
+// TestClearOutputOnly_NilSafe, generated code should never pass nil,
 // but the helper is defensive.
 func TestClearOutputOnly_NilSafe(t *testing.T) {
 	defer func() {
@@ -177,7 +179,7 @@ func TestClearOutputOnly_NilSafe(t *testing.T) {
 	protomcp.ClearOutputOnly(nil)
 }
 
-// TestClearOutputOnly_UnsetNestedNotRecursed — if a nested message
+// TestClearOutputOnly_UnsetNestedNotRecursed, if a nested message
 // field is unset (nil), we must NOT try to recurse into it (would
 // panic on a nil reflect.Message). Has() gate protects us.
 func TestClearOutputOnly_UnsetNestedNotRecursed(t *testing.T) {
@@ -188,7 +190,26 @@ func TestClearOutputOnly_UnsetNestedNotRecursed(t *testing.T) {
 	}
 }
 
-// TestClearOutputOnly_EmptyRepeatedNotRecursed — empty repeated/map
+// TestClearOutputOnly_RecursionDepthCap, google.protobuf.Value is a
+// recursive proto (Value ↔ Struct). protojson.Unmarshal of a crafted
+// payload can produce a tree arbitrarily deep, and an unbounded walk
+// would blow the goroutine stack. The depth guard in
+// clearOutputOnlyReflect must terminate cleanly well before that.
+func TestClearOutputOnly_RecursionDepthCap(t *testing.T) {
+	// Build 500 levels of Value → Struct → Value → …, five times the
+	// cap so this test also pins the cap itself loosely (any cap ≪ 500
+	// is acceptable; we only care that it stops).
+	v := structpb.NewStringValue("leaf")
+	for range 500 {
+		v = structpb.NewStructValue(&structpb.Struct{
+			Fields: map[string]*structpb.Value{"f": v},
+		})
+	}
+	// Must not stack-overflow or panic.
+	protomcp.ClearOutputOnly(v)
+}
+
+// TestClearOutputOnly_EmptyRepeatedNotRecursed, empty repeated/map
 // must be skipped cleanly without iterating.
 func TestClearOutputOnly_EmptyCollectionsSkipped(t *testing.T) {
 	rm := &authv1.TestRepeatedMessages{}
@@ -203,7 +224,7 @@ func TestClearOutputOnly_EmptyCollectionsSkipped(t *testing.T) {
 	}
 }
 
-// TestBoolPtr — basic coverage of the helper used by the generator.
+// TestBoolPtr, basic coverage of the helper used by the generator.
 func TestBoolPtr(t *testing.T) {
 	if p := protomcp.BoolPtr(true); p == nil || *p != true {
 		t.Errorf("BoolPtr(true) = %v", p)
