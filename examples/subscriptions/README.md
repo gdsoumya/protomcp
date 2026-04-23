@@ -24,6 +24,15 @@ resource changes. The SDK tracks per-session per-URI subscriptions
 internally and fans each `ResourceUpdated` call out to only the
 sessions that asked for that URI.
 
+**The subscribe/unsubscribe handlers only act as a gate.** When a
+`resources/subscribe` request arrives, the SDK calls your handler
+first (`return err` to reject, `return nil` to allow); on allow, it
+**unconditionally** records the session in its internal
+subscriptions map. `ResourceUpdated` always reads from that same map,
+so it fans out to subscribed sessions regardless of whether your
+handlers are no-ops or doing real upstream work. The handler type
+decides **which URIs are accepted**, not whether fan-out happens.
+
 ## Pick the pattern that matches your event source
 
 ### Pattern A: push from the write path (simpler, more common)
@@ -64,7 +73,10 @@ delivery per subscription: open a gRPC stream, run a PG `LISTEN`,
 subscribe to a Redis or Kafka topic, register a webhook. Your
 handler does the "start feed for this URI" work; your
 `UnsubscribeHandler` stops it. When events arrive from the external
-source, you still call `ResourceUpdated` to fan them out.
+source, you still call `ResourceUpdated` to fan them out: the SDK's
+session-tracking behaviour is the same as Pattern A, the custom
+handlers only add gating (e.g. reject unknown URIs) and lifecycle
+hooks for starting / stopping upstream work.
 
 ```go
 mgr, _ := subscriptions.NewManager(hub, "tasks://{id}", notifier)
