@@ -4,9 +4,11 @@
 [![GitHub](https://img.shields.io/badge/source-gdsoumya%2Fprotomcp-181717?logo=github)](https://github.com/gdsoumya/protomcp)
 [![Go Reference](https://pkg.go.dev/badge/github.com/gdsoumya/protomcp.svg)](https://pkg.go.dev/github.com/gdsoumya/protomcp)
 
-Protobuf annotations used by [**protomcp**](https://github.com/gdsoumya/protomcp) — a Go library that turns any gRPC service into a [Model Context Protocol](https://modelcontextprotocol.io) server.
+Protobuf annotations used by [**protomcp**](https://github.com/gdsoumya/protomcp), a Go library that turns any gRPC service into a [Model Context Protocol](https://modelcontextprotocol.io) server.
 
-Add a single method option to mark an RPC as an MCP tool:
+Add a method option to mark an RPC as an MCP primitive (tool, resource
+template, resource list, resource list-changed feed, or prompt;
+elicitation is a modifier on `tool`):
 
 ```proto
 import "protomcp/v1/annotations.proto";
@@ -22,7 +24,8 @@ service Greeter {
 }
 ```
 
-Unannotated RPCs are **not exposed** — presence of the annotation is the opt-in, by design.
+Unannotated RPCs are **not exposed**; presence of the annotation is
+the opt-in, by design.
 
 ## Using this module
 
@@ -43,8 +46,8 @@ For the runtime library, generator plugin, quickstart, examples, authentication,
 
 | File | Purpose |
 |---|---|
-| [`protomcp/v1/annotations.proto`](./protomcp/v1/annotations.proto) | `ToolOptions` (method-level), `ServiceOptions` (service-level), `StreamMode` |
+| [`protomcp/v1/annotations.proto`](./protomcp/v1/annotations.proto) | `ToolOptions`, `ResourceTemplateOptions`, `ResourceListOptions`, `ResourceListChangedOptions`, `PromptOptions`, `ElicitationOptions` (method-level), `ServiceOptions` (service-level), `PlaceholderBinding` |
 
 ## License
 
-Apache 2.0 — see [LICENSE](https://github.com/gdsoumya/protomcp/blob/main/LICENSE).
+Apache 2.0, see [LICENSE](https://github.com/gdsoumya/protomcp/blob/main/LICENSE).

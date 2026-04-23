@@ -4,7 +4,7 @@ that genuinely don't apply, but most PRs touch at least Summary + Test
 plan + Checklist.
 
 For larger or design-sensitive changes, please open an issue or a
-discussion first to align on shape — generator output changes, new
+discussion first to align on shape, generator output changes, new
 annotations, and runtime API additions in particular.
 -->
 
@@ -48,4 +48,4 @@ diff in `*.mcp.pb.go`.
 
 ## Notes for reviewers
 
-<!-- Anything subtle worth pointing out — tradeoffs, follow-ups, open questions. -->
+<!-- Anything subtle worth pointing out, tradeoffs, follow-ups, open questions. -->

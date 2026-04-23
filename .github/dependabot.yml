@@ -1,0 +1,67 @@
+# Dependabot config for protomcp.
+#
+# Two ecosystems are in active use:
+#   - gomod: go.mod dependencies (MCP SDK, protobuf, grpc, etc.).
+#   - github-actions: workflow action pins (each step is SHA-pinned, so
+#     Dependabot is the only way to see upgrade PRs).
+#
+# Security updates (CVE-driven) are opened automatically regardless of
+# the schedule below, as long as "Dependabot security updates" is
+# enabled in the repo's Security settings.
+version: 2
+
+updates:
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Asia/Kolkata
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - go
+    commit-message:
+      prefix: "chore(deps)"
+      include: scope
+    groups:
+      # Group all non-major bumps into one PR per run to cut review
+      # overhead. Majors open individually so they can be reviewed with
+      # the breaking-change context.
+      go-minor-and-patch:
+        applies-to: version-updates
+        patterns: ["*"]
+        update-types:
+          - minor
+          - patch
+      # Security bumps still land in one consolidated PR when multiple
+      # advisories land in the same run.
+      go-security:
+        applies-to: security-updates
+        patterns: ["*"]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Asia/Kolkata
+    open-pull-requests-limit: 3
+    labels:
+      - dependencies
+      - github-actions
+    commit-message:
+      prefix: "chore(actions)"
+      include: scope
+    groups:
+      actions-minor-and-patch:
+        applies-to: version-updates
+        patterns: ["*"]
+        update-types:
+          - minor
+          - patch
+      actions-security:
+        applies-to: security-updates
+        patterns: ["*"]

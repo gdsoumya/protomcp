@@ -1,0 +1,61 @@
+name: buf push
+
+on:
+  # Every push to the default branch updates the `main` label on BSR so
+  # `buf.build/gdsoumya/protomcp` (no label) resolves to the latest
+  # master state.
+  push:
+    branches: [main, master]
+  # Every published release applies the tag name as an immutable label
+  # so downstream users can pin to `buf.build/gdsoumya/protomcp:vX.Y.Z`.
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+# BUF_TOKEN is a BSR API token scoped to the buf.build/gdsoumya org.
+# Generate one at https://buf.build/settings/user/tokens and store it
+# as a repository secret named BUF_TOKEN.
+
+jobs:
+  push:
+    name: buf push
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - uses: bufbuild/buf-setup-action@a47c93e0b1648d5651a065437926377d060baa99 # v1.50.0
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: buf lint
+        run: buf lint
+
+      - name: Determine label
+        id: label
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          if [ "$EVENT_NAME" = "release" ]; then
+            label="$RELEASE_TAG"
+          else
+            label="main"
+          fi
+          # Accept only a tight charset; tags are user-controlled.
+          case "$label" in
+            *[!A-Za-z0-9._-]*)
+              echo "refusing to push with unsafe label: $label" >&2
+              exit 1
+              ;;
+          esac
+          echo "value=${label}" >> "$GITHUB_OUTPUT"
+          echo "Pushing with label: ${label}"
+
+      - name: buf push
+        env:
+          BUF_TOKEN: ${{ secrets.BUF_TOKEN }}
+          LABEL: ${{ steps.label.outputs.value }}
+        run: |
+          buf push --label "$LABEL" --exclude-unnamed

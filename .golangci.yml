@@ -114,12 +114,17 @@ linters:
           - unparam
       # The generator's schema builder has inherently long switch blocks over
       # proto Kinds and well-known types. Cyclomatic/cognitive limits there
-      # produce noise without adding value.
+      # produce noise without adding value. "string" / "base64" recur a lot
+      # because the JSON Schema type system spells them out at every field
+      # kind; factoring them into constants would just hurt readability.
+      # goconst is also disabled — the JSON-Schema type strings returned from
+      # many call sites would obscure more than they deduplicate.
       - path: internal/gen/schema/schema.go
         linters:
           - gocognit
           - gocyclo
           - gocritic
+          - goconst
       # Generator core walks files / services / methods, naturally deep.
       - path: internal/gen/generator.go
         linters:
