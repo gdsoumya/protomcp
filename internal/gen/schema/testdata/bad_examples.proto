@@ -1,0 +1,14 @@
+syntax = "proto3";
+
+package protomcp.testdata.decorations.v1;
+
+option go_package = "github.com/gdsoumya/protomcp/internal/gen/schema/testdata;testdatav1";
+
+// BadExample carries an intentionally malformed `@example` marker so tests
+// can assert that ForInputE surfaces a helpful file:line codegen error
+// instead of silently producing a broken schema.
+message BadExample {
+  // A title.
+  // @example not-json-at-all
+  string title = 1;
+}

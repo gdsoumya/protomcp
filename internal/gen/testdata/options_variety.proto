@@ -74,7 +74,7 @@ service Prefixed {
 
   // ProgressStream is a server-streaming RPC. The generator must emit the
   // streaming template (NotifyProgress loop) for it. PROGRESS mode is the
-  // only supported shape — it is implicit and non-configurable.
+  // only supported shape, it is implicit and non-configurable.
   rpc ProgressStream(Empty) returns (stream Empty) {
     option (protomcp.v1.tool) = {};
   }

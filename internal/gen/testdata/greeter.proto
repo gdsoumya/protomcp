@@ -10,7 +10,7 @@ option go_package = "github.com/gdsoumya/protomcp/internal/gen/testdata/greeter;
 // It contains one unary, one server-streaming, one unannotated unary, and
 // two unannotated streaming RPCs so the generator's handling of each shape
 // can be asserted in isolation. Annotated client/bidi streaming is tested
-// separately in bad_streams.proto — those are expected to fail generation.
+// separately in bad_streams.proto, those are expected to fail generation.
 service Greeter {
   // Greets a caller by name. (Unary; annotated; read-only.)
   rpc SayHello(HelloRequest) returns (HelloReply) {
@@ -31,12 +31,12 @@ service Greeter {
   // Internal is used to verify that unannotated RPCs are not exposed.
   rpc Internal(HelloRequest) returns (HelloReply);
 
-  // BatchGreet is unannotated — client-streaming RPCs have no MCP mapping,
+  // BatchGreet is unannotated, client-streaming RPCs have no MCP mapping,
   // so the generator silently ignores them. Annotated client-streaming is a
   // hard error (see bad_streams.proto).
   rpc BatchGreet(stream HelloRequest) returns (HelloReply);
 
-  // Chat is unannotated — bidi-streaming RPCs have no MCP mapping either.
+  // Chat is unannotated, bidi-streaming RPCs have no MCP mapping either.
   rpc Chat(stream HelloRequest) returns (stream HelloReply);
 }
 

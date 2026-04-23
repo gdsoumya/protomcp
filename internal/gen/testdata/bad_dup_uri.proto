@@ -1,0 +1,46 @@
+syntax = "proto3";
+
+// bad_dup_uri.proto exercises the generator's cross-service / cross-file
+// duplicate-uri_template detection for protomcp.v1.resource_list.
+// Registering two listers for the same URI would produce a
+// non-deterministic fanout at runtime, the generator must reject it
+// with a clear message naming both sites.
+package protomcp.gen.testdata.baddupuri.v1;
+
+import "protomcp/v1/annotations.proto";
+
+option go_package = "github.com/gdsoumya/protomcp/internal/gen/testdata/baddupuri;baddupuriv1";
+
+service ItemsA {
+  rpc ListItems(ListItemsRequest) returns (ListItemsResponse) {
+    option (protomcp.v1.resource_list) = {
+      item_path: "items"
+      uri_template: "items://{id}"
+      uri_bindings: [{placeholder: "id", field: "id"}]
+      name_field: "{{name}}"
+    };
+  }
+}
+
+// Second service on the same URI template, must trip the codegen check.
+service ItemsB {
+  rpc ListItems(ListItemsRequest) returns (ListItemsResponse) {
+    option (protomcp.v1.resource_list) = {
+      item_path: "items"
+      uri_template: "items://{id}"
+      uri_bindings: [{placeholder: "id", field: "id"}]
+      name_field: "{{name}}"
+    };
+  }
+}
+
+message ListItemsRequest {}
+
+message ListItemsResponse {
+  repeated Item items = 1;
+}
+
+message Item {
+  string id = 1;
+  string name = 2;
+}

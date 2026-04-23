@@ -1,8 +1,8 @@
 syntax = "proto3";
 
 // bad_bidi.proto exercises the generator's bidi-streaming hard-error path.
-// Annotating a bidi-streaming RPC with protomcp.v1.tool is illegal — it
-// has no MCP mapping — and the generator must reject it with a clear message.
+// Annotating a bidi-streaming RPC with protomcp.v1.tool is illegal, it
+// has no MCP mapping, and the generator must reject it with a clear message.
 package protomcp.gen.testdata.badbidi.v1;
 
 import "protomcp/v1/annotations.proto";

@@ -1,0 +1,20 @@
+syntax = "proto3";
+
+// bad_prompt_streams.proto exercises the generator's streaming hard-error
+// path for the prompt annotation. Prompts are synchronous request/response;
+// annotating a streaming RPC with protomcp.v1.prompt must fail with a
+// clear message.
+package protomcp.gen.testdata.badpromptstreams.v1;
+
+import "protomcp/v1/annotations.proto";
+
+option go_package = "github.com/gdsoumya/protomcp/internal/gen/testdata/badpromptstreams;badpromptstreamsv1";
+
+service BadPromptStream {
+  rpc Watch(WatchRequest) returns (stream WatchReply) {
+    option (protomcp.v1.prompt) = { template: "Watching" };
+  }
+}
+
+message WatchRequest {}
+message WatchReply {}

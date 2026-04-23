@@ -5,6 +5,7 @@
 package schema
 
 import (
+	"encoding/json"
 	"fmt"
 	"maps"
 	"slices"
@@ -19,35 +20,98 @@ import (
 
 // Options controls schema generation.
 type Options struct {
-	// MaxRecursionDepth caps how many times a recursive message type can be
-	// expanded along a single path before being replaced with a string
-	// placeholder. Zero uses the default (3).
+	// MaxRecursionDepth caps recursive message expansion per path
+	// before substituting a string placeholder. Zero uses the default
+	// (3).
 	MaxRecursionDepth int
 }
 
 const defaultMaxRecursionDepth = 3
 
-// fieldFilter decides whether a field should be included in the generated schema.
-// It is used to implement input-only filtering (OUTPUT_ONLY stripping).
+// fieldFilter decides whether a field appears in the schema.
 type fieldFilter func(protoreflect.FieldDescriptor) bool
 
 // ForInput returns the JSON Schema map for use as an MCP tool's InputSchema.
 // Fields annotated google.api.field_behavior = OUTPUT_ONLY are omitted.
+//
+// Panics if a field carries an invalid `// @example <json>` marker; callers
+// that want to surface the error cleanly should use ForInputE instead.
 func ForInput(md protoreflect.MessageDescriptor, opts Options) map[string]any {
-	return messageSchema(md, opts, nil, isInputField)
+	s, err := ForInputE(md, opts)
+	if err != nil {
+		panic(err)
+	}
+	return s
 }
 
 // ForOutput returns the JSON Schema map for use as an MCP tool's OutputSchema.
 // All fields are included.
+//
+// Panics if a field carries an invalid `// @example <json>` marker; callers
+// that want to surface the error cleanly should use ForOutputE instead.
 func ForOutput(md protoreflect.MessageDescriptor, opts Options) map[string]any {
-	return messageSchema(md, opts, nil, includeAllFields)
+	s, err := ForOutputE(md, opts)
+	if err != nil {
+		panic(err)
+	}
+	return s
 }
+
+// ForInputE is like ForInput but returns any comment-marker parse errors
+// (e.g., invalid JSON in an `// @example` line) instead of panicking.
+func ForInputE(md protoreflect.MessageDescriptor, opts Options) (_ map[string]any, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			if ce, ok := r.(*commentError); ok {
+				err = ce
+				return
+			}
+			panic(r)
+		}
+	}()
+	return messageSchema(md, opts, nil, isInputField), nil
+}
+
+// ForOutputE is like ForOutput but returns any comment-marker parse errors
+// (e.g., invalid JSON in an `// @example` line) instead of panicking.
+func ForOutputE(md protoreflect.MessageDescriptor, opts Options) (_ map[string]any, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			if ce, ok := r.(*commentError); ok {
+				err = ce
+				return
+			}
+			panic(r)
+		}
+	}()
+	return messageSchema(md, opts, nil, includeAllFields), nil
+}
+
+// commentError reports a structured-marker (e.g. @example) parse error
+// inside a proto leading comment, with file:line info for diagnostics.
+type commentError struct {
+	File  string // proto file path as reported by the descriptor
+	Line  int    // 1-based line number of the offending comment line, 0 if unknown
+	Field string // fully-qualified field name (e.g., "pkg.Msg.field")
+	Inner error
+}
+
+func (e *commentError) Error() string {
+	loc := e.File
+	if e.Line > 0 {
+		loc = fmt.Sprintf("%s:%d", e.File, e.Line)
+	}
+	if loc == "" {
+		loc = "<unknown>"
+	}
+	return fmt.Sprintf("%s: field %s: %v", loc, e.Field, e.Inner)
+}
+
+func (e *commentError) Unwrap() error { return e.Inner }
 
 func includeAllFields(_ protoreflect.FieldDescriptor) bool { return true }
 
-// isInputField reports whether a field should appear in an input schema.
-// Fields marked OUTPUT_ONLY (AIP-203) are populated by the server and must
-// not appear in client-supplied input.
+// isInputField drops OUTPUT_ONLY fields (AIP-203) from input schemas.
 func isInputField(fd protoreflect.FieldDescriptor) bool {
 	if !proto.HasExtension(fd.Options(), annotations.E_FieldBehavior) {
 		return true
@@ -56,8 +120,8 @@ func isInputField(fd protoreflect.FieldDescriptor) bool {
 	return !slices.Contains(behaviors, annotations.FieldBehavior_OUTPUT_ONLY)
 }
 
-// messageSchema is the internal recursive walker. seen tracks expansion depth
-// per message FullName on the current path so we break cycles deterministically.
+// messageSchema is the recursive walker; seen tracks per-FullName
+// expansion depth so cycles break deterministically.
 func messageSchema(
 	md protoreflect.MessageDescriptor,
 	opts Options,
@@ -90,16 +154,12 @@ func messageSchema(
 		if !filter(fd) {
 			continue
 		}
-		// We emit the protojson JSON name (camelCase by default, or the
-		// field's json_name override) rather than the raw proto snake_case
-		// name so that the schema matches what protojson.Marshal produces on
-		// the response side. protojson accepts both on input, so LLMs fed
-		// our schema can also produce the proto-name form and still parse.
+		// Use the protojson JSON name so the schema matches what
+		// protojson.Marshal produces on the response side.
 		name := fd.JSONName()
 
-		// Real (non-synthetic) oneofs are modeled as anyOf { oneOf: ... }.
-		// Synthetic oneofs (proto3 `optional`) are ignored here and the field
-		// is emitted as an ordinary optional field.
+		// Real oneofs → anyOf {oneOf:...}; synthetic oneofs
+		// (proto3 `optional`) fall through as ordinary optional fields.
 		if oneof := fd.ContainingOneof(); oneof != nil && !oneof.IsSynthetic() {
 			key := string(oneof.Name())
 			oneOfGroups[key] = append(oneOfGroups[key], map[string]any{
@@ -115,7 +175,7 @@ func messageSchema(
 		}
 	}
 
-	// Iterate oneofs in declaration order so output is deterministic.
+	// Declaration-order iteration for deterministic output.
 	var anyOf []map[string]any
 	oneofs := md.Oneofs()
 	for i := range oneofs.Len() {
@@ -141,8 +201,8 @@ func messageSchema(
 	return result
 }
 
-// fieldSchema builds the schema for a single field, including list/map wrapping
-// and buf.validate constraint overlay.
+// fieldSchema builds the schema for one field, including list/map
+// wrapping and buf.validate overlay.
 func fieldSchema(
 	fd protoreflect.FieldDescriptor,
 	opts Options,
@@ -167,11 +227,10 @@ func fieldSchema(
 
 	maps.Copy(schema, extractValidateConstraints(fd))
 
-	// Wrap in array if the field is repeated. Both the array wrapper and the
-	// inner item schema receive field-level decorations (description,
-	// deprecated marker) so the `description` renders on whichever shape the
-	// caller inspects. Repeated-specific rules (minItems etc.) go on the
-	// wrapper only.
+	// Array wrapper and inner item both receive field-level
+	// decorations so description renders regardless of which shape
+	// the caller inspects. Repeated-specific rules stay on the
+	// wrapper.
 	if fd.IsList() {
 		list := map[string]any{"type": "array", "items": schema}
 		applyRepeatedRules(fd, list)
@@ -182,42 +241,88 @@ func fieldSchema(
 	return schema
 }
 
-// decorateFieldSchema applies field-level JSON Schema decorations that are
-// independent of the field's type:
-//   - `description` from leading/trailing proto comments (when the descriptor
-//     carries source info; runtime protoregistry does not, so this is a no-op
-//     in that path),
-//   - `deprecated: true` when the field has `[deprecated = true]`.
+// decorateFieldSchema applies field-level JSON Schema decorations:
+// description from proto comments, examples from `// @example <json>`
+// markers, and deprecated from [deprecated = true]. Existing
+// description/examples are never overwritten.
 //
-// We never overwrite an existing `description` — constraint mappers (e.g.,
-// Any → `{@type, value}`) may have already set one that is more useful.
+// Invalid @example JSON panics with *commentError; ForInputE /
+// ForOutputE surface it as a codegen error.
 func decorateFieldSchema(fd protoreflect.FieldDescriptor, s map[string]any) {
-	if _, has := s["description"]; !has {
-		if desc := fieldDescription(fd); desc != "" {
-			s["description"] = desc
+	desc, examples := fieldCommentMeta(fd)
+	if _, has := s["description"]; !has && desc != "" {
+		s["description"] = desc
+	}
+	// Precedence for enum description: field-comment > enum-type-comment.
+	if _, has := s["description"]; !has && fd.Kind() == protoreflect.EnumKind {
+		if d := enumTypeDescription(fd.Enum()); d != "" {
+			s["description"] = d
 		}
+	}
+	if _, has := s["examples"]; !has && len(examples) > 0 {
+		s["examples"] = examples
 	}
 	if fieldIsDeprecated(fd) {
 		s["deprecated"] = true
 	}
 }
 
-// fieldDescription returns the cleaned leading proto comment for fd, or the
-// trailing comment if there is no leading one. Empty if the descriptor
-// source file did not carry source_code_info (the common case when types
-// were registered from compiled Go stubs via the runtime protoregistry).
-func fieldDescription(fd protoreflect.FieldDescriptor) string {
+// fieldCommentMeta returns cleaned description and parsed examples
+// from fd's leading comment (falling back to trailing).
+func fieldCommentMeta(fd protoreflect.FieldDescriptor) (string, []any) {
 	loc := fd.ParentFile().SourceLocations().ByDescriptor(fd)
-	c := strings.TrimSpace(CleanComment(loc.LeadingComments))
-	if c == "" {
-		c = strings.TrimSpace(CleanComment(loc.TrailingComments))
+	desc, examples := parseComment(loc.LeadingComments, fd, loc.StartLine+1)
+	if desc == "" && len(examples) == 0 {
+		desc, examples = parseComment(loc.TrailingComments, fd, loc.StartLine+1)
 	}
-	return c
+	return desc, examples
 }
 
-// fieldIsDeprecated reports whether the field carries `[deprecated = true]`.
-// We intentionally do not inherit deprecation from the enclosing message —
-// that would be surprising, and proto lets you mark either one independently.
+// parseComment splits raw into description lines and examples
+// (@example payloads). baseLine is the 1-based line of raw's first
+// line (0 when unknown). Invalid @example JSON panics with
+// *commentError.
+func parseComment(raw string, fd protoreflect.FieldDescriptor, baseLine int) (string, []any) {
+	if raw == "" {
+		return "", nil
+	}
+	var descLines []string
+	var examples []any
+	prefixes := []string{"buf:lint:", "@ignore-comment", "@exclude"}
+	lines := strings.Split(raw, "\n")
+skip:
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		for _, p := range prefixes {
+			if strings.HasPrefix(trimmed, p) {
+				continue skip
+			}
+		}
+		if rest, ok := strings.CutPrefix(trimmed, "@example "); ok {
+			rest = strings.TrimSpace(rest)
+			var v any
+			if err := json.Unmarshal([]byte(rest), &v); err != nil {
+				srcLine := 0
+				if baseLine > 0 {
+					srcLine = baseLine + i
+				}
+				panic(&commentError{
+					File:  fd.ParentFile().Path(),
+					Line:  srcLine,
+					Field: string(fd.FullName()),
+					Inner: fmt.Errorf("invalid JSON in @example: %w", err),
+				})
+			}
+			examples = append(examples, v)
+			continue
+		}
+		// The no-payload @example form is preserved as description.
+		descLines = append(descLines, trimmed)
+	}
+	return strings.TrimSpace(strings.Join(descLines, "\n")), examples
+}
+
+// fieldIsDeprecated reports whether fd carries [deprecated = true].
 func fieldIsDeprecated(fd protoreflect.FieldDescriptor) bool {
 	opts := fd.Options()
 	if opts == nil {
@@ -229,10 +334,9 @@ func fieldIsDeprecated(fd protoreflect.FieldDescriptor) bool {
 	return false
 }
 
-// applyRepeatedRules reads buf.validate repeated-specific rules (min_items,
-// max_items, unique) and applies them to the array schema. Element-level
-// rules (e.g., repeated.items.string.pattern) are handled by extractValidateConstraints
-// when it walks into GetRepeated().GetItems().
+// applyRepeatedRules copies buf.validate min_items / max_items /
+// unique onto the array schema. Element-level rules are handled
+// separately via GetRepeated().GetItems().
 func applyRepeatedRules(fd protoreflect.FieldDescriptor, list map[string]any) {
 	rules := fieldRules(fd)
 	if rules == nil {
@@ -253,8 +357,8 @@ func applyRepeatedRules(fd protoreflect.FieldDescriptor, list map[string]any) {
 	}
 }
 
-// mapFieldSchema renders a proto map as a JSON object with propertyNames
-// constraining the key format.
+// mapFieldSchema renders a proto map as a JSON object with
+// propertyNames constraining the key format.
 func mapFieldSchema(
 	fd protoreflect.FieldDescriptor,
 	opts Options,
@@ -280,9 +384,9 @@ func mapFieldSchema(
 	return out
 }
 
-// keyConstraints returns a JSON Schema describing the stringified form of
-// a map's key. Protojson keys are always strings; we add pattern/enum checks
-// so LLMs don't hand us "abc" for an int key.
+// keyConstraints returns a JSON Schema for the stringified map key.
+// Protojson keys are always strings; pattern/enum checks guard
+// numeric/bool key types against bogus input.
 func keyConstraints(mk protoreflect.FieldDescriptor) map[string]any {
 	s := map[string]any{"type": "string"}
 	switch mk.Kind() {
@@ -298,8 +402,8 @@ func keyConstraints(mk protoreflect.FieldDescriptor) map[string]any {
 	return s
 }
 
-// messageFieldSchema handles nested messages, including well-known types
-// that render as primitives in protojson.
+// messageFieldSchema handles nested messages and well-known types
+// that protojson renders as primitives.
 func messageFieldSchema(
 	fd protoreflect.FieldDescriptor,
 	opts Options,
@@ -320,11 +424,9 @@ func messageFieldSchema(
 	case "google.protobuf.FieldMask":
 		return map[string]any{"type": "string"}
 	case "google.protobuf.Any":
-		// protojson serializes Any as an open object with an @type URL
-		// plus the packed message's own fields at the top level (or, for
-		// well-known-type payloads, a single "value" field). We can't
-		// know the inner type at codegen time, so we emit a permissive
-		// open object that accepts both shapes and requires only @type.
+		// protojson serializes Any as an open object with @type plus
+		// the packed message's fields (or a single "value" for WKT
+		// payloads); the inner type is unknown at codegen time.
 		return map[string]any{
 			"type": []string{"object", "null"},
 			"properties": map[string]any{
@@ -351,51 +453,82 @@ func messageFieldSchema(
 	}
 }
 
-// enumFieldSchema emits string enum values using proto value names.
-// If buf.validate constrains the set, the schema is narrowed accordingly.
+// enumFieldSchema emits string enum values using proto value names,
+// narrowed by buf.validate when applicable. enumDescriptions is
+// emitted in parallel order when any value has a leading comment.
 func enumFieldSchema(fd protoreflect.FieldDescriptor) map[string]any {
 	values := fd.Enum().Values()
 
-	// buf.validate enum rules
+	// Collect in emission order so enum and enumDescriptions align.
+	var selected []protoreflect.EnumValueDescriptor
+
 	rules := fieldRules(fd)
 	if rules != nil && rules.GetEnum() != nil {
 		er := rules.GetEnum()
-		if er.HasConst() {
+		switch {
+		case er.HasConst():
 			if ev := values.ByNumber(protoreflect.EnumNumber(er.GetConst())); ev != nil {
-				return map[string]any{"type": "string", "enum": []string{string(ev.Name())}}
+				selected = []protoreflect.EnumValueDescriptor{ev}
 			}
-		}
-		if len(er.GetIn()) > 0 {
-			names := make([]string, 0, len(er.GetIn()))
+		case len(er.GetIn()) > 0:
+			selected = make([]protoreflect.EnumValueDescriptor, 0, len(er.GetIn()))
 			for _, n := range er.GetIn() {
 				if ev := values.ByNumber(protoreflect.EnumNumber(n)); ev != nil {
-					names = append(names, string(ev.Name()))
+					selected = append(selected, ev)
 				}
 			}
-			return map[string]any{"type": "string", "enum": names}
-		}
-		if er.GetDefinedOnly() || len(er.GetNotIn()) > 0 {
+		case er.GetDefinedOnly() || len(er.GetNotIn()) > 0:
 			excluded := make(map[int32]struct{}, len(er.GetNotIn()))
 			for _, n := range er.GetNotIn() {
 				excluded[n] = struct{}{}
 			}
-			names := make([]string, 0, values.Len())
+			selected = make([]protoreflect.EnumValueDescriptor, 0, values.Len())
 			for i := range values.Len() {
 				v := values.Get(i)
 				if _, skip := excluded[int32(v.Number())]; skip {
 					continue
 				}
-				names = append(names, string(v.Name()))
+				selected = append(selected, v)
 			}
-			return map[string]any{"type": "string", "enum": names}
+		}
+	}
+	if selected == nil {
+		selected = make([]protoreflect.EnumValueDescriptor, 0, values.Len())
+		for i := range values.Len() {
+			selected = append(selected, values.Get(i))
 		}
 	}
 
-	names := make([]string, 0, values.Len())
-	for i := range values.Len() {
-		names = append(names, string(values.Get(i).Name()))
+	names := make([]string, len(selected))
+	descriptions := make([]string, len(selected))
+	anyDesc := false
+	for i, ev := range selected {
+		names[i] = string(ev.Name())
+		d := enumValueDescription(ev)
+		descriptions[i] = d
+		if d != "" {
+			anyDesc = true
+		}
 	}
-	return map[string]any{"type": "string", "enum": names}
+
+	out := map[string]any{"type": "string", "enum": names}
+	if anyDesc {
+		out["enumDescriptions"] = descriptions
+	}
+	return out
+}
+
+// enumValueDescription returns the cleaned leading comment for ev.
+func enumValueDescription(ev protoreflect.EnumValueDescriptor) string {
+	loc := ev.ParentFile().SourceLocations().ByDescriptor(ev)
+	return strings.TrimSpace(CleanComment(loc.LeadingComments))
+}
+
+// enumTypeDescription returns the cleaned leading comment on the
+// enum type itself; used as a fallback for fields without their own.
+func enumTypeDescription(ed protoreflect.EnumDescriptor) string {
+	loc := ed.ParentFile().SourceLocations().ByDescriptor(ed)
+	return strings.TrimSpace(CleanComment(loc.LeadingComments))
 }
 
 func scalarFieldSchema(fd protoreflect.FieldDescriptor) map[string]any {
@@ -407,9 +540,8 @@ func scalarFieldSchema(fd protoreflect.FieldDescriptor) map[string]any {
 	return s
 }
 
-// kindToJSONType maps a proto Kind to the JSON Schema type string used by
-// protojson. Crucially int64/uint64/sint64/fixed64 render as JSON strings
-// to avoid precision loss in JavaScript-based MCP clients.
+// kindToJSONType maps a proto Kind to a JSON Schema type. 64-bit
+// ints render as strings to avoid JavaScript precision loss.
 func kindToJSONType(k protoreflect.Kind) string {
 	switch k {
 	case protoreflect.BoolKind:
@@ -431,11 +563,8 @@ func kindToJSONType(k protoreflect.Kind) string {
 	}
 }
 
-// isRequired reports whether a field should appear in the parent message's
-// "required" array. Required-ness is an API concern, not a wire-format
-// concern, so we read it only from explicit annotations:
-//   - google.api.field_behavior = REQUIRED (AIP-203)
-//   - buf.validate.field.required = true
+// isRequired reads google.api.field_behavior=REQUIRED (AIP-203) and
+// buf.validate.field.required.
 func isRequired(fd protoreflect.FieldDescriptor) bool {
 	if proto.HasExtension(fd.Options(), annotations.E_FieldBehavior) {
 		behaviors, _ := proto.GetExtension(fd.Options(), annotations.E_FieldBehavior).([]annotations.FieldBehavior)
@@ -449,7 +578,7 @@ func isRequired(fd protoreflect.FieldDescriptor) bool {
 	return false
 }
 
-// fieldRules returns the buf.validate FieldRules attached to fd, or nil.
+// fieldRules returns the buf.validate FieldRules on fd, or nil.
 func fieldRules(fd protoreflect.FieldDescriptor) *validate.FieldRules {
 	if !proto.HasExtension(fd.Options(), validate.E_Field) {
 		return nil
@@ -458,10 +587,9 @@ func fieldRules(fd protoreflect.FieldDescriptor) *validate.FieldRules {
 	return rules
 }
 
-// extractValidateConstraints translates buf.validate scalar/bytes/string
-// rules on fd into JSON-Schema keywords. Element-level rules on repeated
-// fields are picked up here too because buf.validate nests them under
-// FieldRules.GetRepeated().GetItems().
+// extractValidateConstraints translates buf.validate rules into JSON
+// Schema keywords. For repeated fields, per-item constraints live
+// under GetRepeated().GetItems().
 func extractValidateConstraints(fd protoreflect.FieldDescriptor) map[string]any {
 	out := map[string]any{}
 	rules := fieldRules(fd)
@@ -469,7 +597,6 @@ func extractValidateConstraints(fd protoreflect.FieldDescriptor) map[string]any 
 		return out
 	}
 
-	// For repeated fields, per-item constraints live under GetRepeated().GetItems().
 	if fd.IsList() {
 		if items := rules.GetRepeated().GetItems(); items != nil {
 			rules = items
@@ -480,7 +607,7 @@ func extractValidateConstraints(fd protoreflect.FieldDescriptor) map[string]any 
 	return out
 }
 
-// convertFieldRules is the bulk of the buf.validate → JSON Schema mapping.
+// convertFieldRules maps buf.validate FieldRules to JSON Schema.
 func convertFieldRules(rules *validate.FieldRules) map[string]any {
 	out := map[string]any{}
 	if rules == nil {
@@ -523,23 +650,15 @@ func convertFieldRules(rules *validate.FieldRules) map[string]any {
 	return out
 }
 
-// applyStringRules covers every buf.validate.StringRules variant that has
-// a sensible JSON Schema expression. Unknown / non-standard `format`
-// strings (uri-reference, ipv4-with-prefixlen, etc.) are valid per JSON
-// Schema draft 2020-12 — strict validators ignore them, LLM clients
-// receive them as strong hints about the expected shape.
+// applyStringRules maps buf.validate.StringRules to JSON Schema.
+// Non-standard format names (uri-reference, ipv4-with-prefixlen, etc.)
+// are accepted per JSON Schema draft 2020-12.
 func applyStringRules(s *validate.StringRules, out map[string]any) {
-	// Well-known string formats. Later entries would win, so we only set
-	// a format if none has been set yet — buf.validate itself disallows
-	// setting multiple at once (they live in a oneof), so at most one
-	// will ever be truthy. The names follow JSON Schema draft 2020-12
-	// where standardized, and buf.validate rule names otherwise.
+	// buf.validate forbids setting multiple formats (oneof).
 	switch {
 	case s.GetUuid():
 		out["format"] = "uuid"
 	case s.GetTuuid():
-		// Trimmed UUID (no hyphens). No standard JSON Schema name; we
-		// forward buf.validate's own for LLM guidance.
 		out["format"] = "tuuid"
 	case s.GetEmail():
 		out["format"] = "email"
@@ -593,15 +712,14 @@ func applyStringRules(s *validate.StringRules, out map[string]any) {
 		out["enum"] = append([]string(nil), s.GetIn()...)
 	}
 	if len(s.GetNotIn()) > 0 {
-		// JSON Schema has no "not-enum"; express as `not: {enum: [...]}`.
+		// JSON Schema has no "not-enum"; express as not/enum.
 		out["not"] = map[string]any{"enum": append([]string(nil), s.GetNotIn()...)}
 	}
 }
 
-// applyBytesRules maps bytes rules. protojson serializes bytes as
-// base64 strings, so minLength/maxLength here are advisory — they
-// constrain the base64 string length, not the raw byte count.
-// protovalidate on the gRPC side remains authoritative.
+// applyBytesRules maps bytes rules. min/maxLength here bound the
+// base64 string length, not the raw byte count; protovalidate on the
+// gRPC side is authoritative.
 func applyBytesRules(b *validate.BytesRules, out map[string]any) {
 	if b.HasLen() {
 		out["minLength"] = b.GetLen()
@@ -615,13 +733,9 @@ func applyBytesRules(b *validate.BytesRules, out map[string]any) {
 	}
 }
 
-// The Int32/UInt32/Int64/UInt64/Float/Double rule helpers are
-// structurally identical but strongly typed against distinct
-// protovalidate rule messages. Generic-izing them would require
-// parametric constraints across six unrelated proto types with
-// different getter signatures (int32 vs uint32 vs int64 …) and the
-// resulting code would be harder to read than six short functions.
-// Keep them explicit.
+// The Int32/UInt32/Int64/UInt64/Float/Double helpers are structurally
+// identical but typed against distinct protovalidate rule messages;
+// generic-izing them would obscure the code.
 //
 //nolint:dupl // see block comment above
 func applyInt32Rules(r *validate.Int32Rules, out map[string]any) {
@@ -646,14 +760,9 @@ func applyInt32Rules(r *validate.Int32Rules, out map[string]any) {
 	}
 }
 
-// Int64 fields render as JSON strings per protojson (protobuf convention
-// to preserve precision beyond 2^53 in JavaScript clients), so the
-// numeric bounds and the {const, enum, not-enum} values emitted below
-// all live on a "type": "string" schema. Strict JSON Schema validators
-// treat numeric keywords on string-typed values as a no-op, so these
-// are guidance for LLMs (they signal the intended range / allowed
-// values) rather than enforced constraints. protovalidate on the gRPC
-// side is the authoritative check. Same reasoning applies to
+// Int64 fields render as JSON strings per protojson (precision
+// beyond 2^53), so numeric keywords emitted here are LLM hints, not
+// enforced constraints; protovalidate is authoritative. Same for
 // applyUint64Rules.
 func applyInt64Rules(r *validate.Int64Rules, out map[string]any) {
 	if r.HasGt() {
@@ -778,12 +887,11 @@ func overlay(dst, src map[string]any) {
 	maps.Copy(dst, src)
 }
 
-// CleanComment strips tool-specific comment prefixes (buf:lint, @ignore-comment)
-// and normalizes whitespace so the remaining text is suitable as a JSON Schema
-// "description".
+// CleanComment strips tool pragmas (buf:lint:, @ignore-comment,
+// @exclude) and normalizes whitespace for use as a description.
 func CleanComment(comment string) string {
 	var out []string
-	prefixes := []string{"buf:lint:", "@ignore-comment"}
+	prefixes := []string{"buf:lint:", "@ignore-comment", "@exclude"}
 outer:
 	for line := range strings.SplitSeq(comment, "\n") {
 		trimmed := strings.TrimSpace(line)

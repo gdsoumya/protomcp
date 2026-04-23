@@ -1,0 +1,66 @@
+syntax = "proto3";
+
+// prompts.proto exercises the generator's prompt annotation path:
+// unary-only gating, Mustache template parsing + variable validation,
+// enum + buf.validate.string.in completion sources, and the Register
+// prompts function emission.
+package protomcp.gen.testdata.prompts.v1;
+
+import "buf/validate/validate.proto";
+import "google/api/field_behavior.proto";
+import "protomcp/v1/annotations.proto";
+
+option go_package = "github.com/gdsoumya/protomcp/internal/gen/testdata/prompts;promptsv1";
+
+enum Priority {
+  PRIORITY_UNSPECIFIED = 0;
+  PRIORITY_LOW = 1;
+  PRIORITY_MEDIUM = 2;
+  PRIORITY_HIGH = 3;
+}
+
+service PromptSvc {
+  // ReviewItem returns the item with the given id, rendered as a prompt
+  // asking the LLM to review it. Exercises: title, description override,
+  // a required string argument, and an enum argument whose completions
+  // come from the enum's value names.
+  rpc ReviewItem(ReviewItemRequest) returns (Item) {
+    option (protomcp.v1.prompt) = {
+      name: "review_item"
+      title: "Review an item"
+      description: "Ask the LLM to review a single item."
+      template: "Review item {{title}} (ID: {{id}}).\n\nPriority: {{priority}}\n\nWhat should happen next?"
+    };
+  }
+
+  // CategorySelect exercises the buf.validate.string.in completion
+  // source on a plain string field.
+  rpc CategorySelect(CategorySelectRequest) returns (CategorySelectReply) {
+    option (protomcp.v1.prompt) = {
+      template: "Tell me about items in category {{category}}."
+    };
+  }
+}
+
+message ReviewItemRequest {
+  string id = 1 [(google.api.field_behavior) = REQUIRED];
+  Priority priority = 2;
+}
+
+message CategorySelectRequest {
+  string category = 1 [
+    (buf.validate.field).string.in = "alpha",
+    (buf.validate.field).string.in = "beta",
+    (buf.validate.field).string.in = "gamma"
+  ];
+}
+
+message CategorySelectReply {
+  string category = 1;
+}
+
+message Item {
+  string id = 1;
+  string title = 2;
+  string priority = 3;
+}

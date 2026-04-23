@@ -14,10 +14,13 @@ import (
 	// Side-effect imports: register the annotation extension and the fixture
 	// protos in the global protoregistry so protogen can resolve extension
 	// types when walking the descriptors embedded in fixtures.binpb.
+	_ "github.com/gdsoumya/protomcp/internal/gen/testdata/elicit"
 	_ "github.com/gdsoumya/protomcp/internal/gen/testdata/greeter"
 	_ "github.com/gdsoumya/protomcp/internal/gen/testdata/multi"
 	_ "github.com/gdsoumya/protomcp/internal/gen/testdata/notools"
 	_ "github.com/gdsoumya/protomcp/internal/gen/testdata/options"
+	_ "github.com/gdsoumya/protomcp/internal/gen/testdata/pragmas"
+	_ "github.com/gdsoumya/protomcp/internal/gen/testdata/prompts"
 	_ "github.com/gdsoumya/protomcp/pkg/api/gen/protomcp/v1"
 )
 
@@ -49,14 +52,17 @@ func TestGenerate_Greeter(t *testing.T) {
 		{"unannotated Internal RPC does not appear at all", false, "Greeter_Internal_InputSchema"},
 		{"unannotated BatchGreet (client-streaming) is not exposed", false, `"Greeter_BatchGreet"`},
 		{"unannotated Chat (bidi) is not exposed", false, `"Greeter_Chat"`},
-		// Skip comments were removed — unsupported streaming shapes now
+		// Skip comments were removed, unsupported streaming shapes now
 		// either produce nothing (when unannotated) or a hard error (when
 		// annotated; see TestGenerate_BadStreams_ClientErrors / _BidiErrors).
 		{"no skip comments in output", false, "protoc-gen-mcp: skipping"},
 		{"server-streaming emits progress loop", true, "NotifyProgress"},
 		{"unary handler path", true, "client.SayHello(ctx, upstream)"},
 		{"streaming handler path", true, "client.StreamGreetings(ctx, upstream)"},
-		{"reads Input from GRPCRequest (type-assert)", true, "g.Input.(*"},
+		{"reads Input from GRPCData (type-assert)", true, "g.Input.(*"},
+		// Client-controlled progress-token values MUST be sanitized
+		// before landing in outgoing gRPC metadata (CR/LF/NUL stripped).
+		{"progress token sanitized before Metadata.Set", true, "protomcp.SanitizeMetadataValue(fmt.Sprintf"},
 	}
 	assertSubstrings(t, out, cases)
 }
@@ -65,7 +71,7 @@ func TestGenerate_Greeter(t *testing.T) {
 // clear error when a client-streaming RPC is annotated with protomcp.v1.tool.
 func TestGenerate_BadStreams_ClientErrors(t *testing.T) {
 	err := runGenerateExpectError(t, "bad_streams.proto")
-	want := "BadClient.Push: client-streaming RPCs cannot be exposed as MCP tools"
+	want := "BadClient.Push: client-streaming RPCs cannot be exposed as MCP primitives"
 	if err == nil || !strings.Contains(err.Error(), want) {
 		t.Fatalf("want error containing %q, got %v", want, err)
 	}
@@ -75,7 +81,99 @@ func TestGenerate_BadStreams_ClientErrors(t *testing.T) {
 // clear error when a bidi-streaming RPC is annotated with protomcp.v1.tool.
 func TestGenerate_BadStreams_BidiErrors(t *testing.T) {
 	err := runGenerateExpectError(t, "bad_bidi.proto")
-	want := "BadBidi.Duplex: bidi-streaming RPCs cannot be exposed as MCP tools"
+	want := "BadBidi.Duplex: bidi-streaming RPCs cannot be exposed as MCP primitives"
+	if err == nil || !strings.Contains(err.Error(), want) {
+		t.Fatalf("want error containing %q, got %v", want, err)
+	}
+}
+
+// TestGenerate_Elicit covers the happy path where a method carries both a
+// tool and an elicitation annotation: the generated source must emit the
+// mcp.ElicitParams struct, the Mustache-rendered message expression, the
+// accept-path guard, and the decline-path IsError short-circuit.
+func TestGenerate_Elicit(t *testing.T) {
+	out := runGenerate(t, "elicit.proto")
+
+	cases := []substringCase{
+		{"register function", true, "RegisterElicitMCPTools"},
+		{"Delete tool name", true, `"Elicit_Delete"`},
+		{"ElicitParams struct literal", true, "&mcp.ElicitParams{"},
+		// The literal prefix up to the first Mustache var appears as a Go
+		// string literal in the emitted Sprintf concatenation.
+		{"rendered message prefix", true, `"Delete item with id "`},
+		{"rendered message id getter", true, "(&in).GetId()"},
+		// Non-accept actions short-circuit with an IsError result.
+		{"decline short-circuit", true, "User declined to proceed."},
+		{"IsError on decline", true, "IsError: true"},
+		// The gRPC call still appears, elicitation wraps it, not replaces.
+		{"delete still calls gRPC", true, "client.Delete(ctx, upstream)"},
+		// Destructive tools still get the DestructiveHint annotation.
+		{"destructive hint preserved", true, "DestructiveHint: protomcp.BoolPtr(true)"},
+	}
+	assertSubstrings(t, out, cases)
+}
+
+// TestGenerate_BadDupURI asserts the generator hard-errors when two
+// `resource_list` annotations appear in the same codegen run. MCP's
+// `resources/list` is a single flat cursor-paginated stream; running
+// two listers against it would produce non-deterministic pagination.
+// Users enumerate multiple resource types via a single RPC + a
+// templated URI scheme like `{type}://{id}`.
+func TestGenerate_BadDupURI(t *testing.T) {
+	err := runGenerateExpectError(t, "bad_dup_uri.proto")
+	if err == nil {
+		t.Fatal("want error, got nil")
+	}
+	for _, want := range []string{
+		"at most one resource_list",
+		"already registered",
+		"{type}://{id}", // the suggested fix appears in the error
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error missing %q\nerror: %v", want, err)
+		}
+	}
+}
+
+// TestGenerate_BadDupListChanged asserts the generator hard-errors
+// when two `resource_list_changed` annotations appear in one codegen
+// run. Every annotation fires the same single
+// `notifications/resources/list_changed` wire event, so multiple
+// annotations are always redundant.
+func TestGenerate_BadDupListChanged(t *testing.T) {
+	err := runGenerateExpectError(t, "bad_dup_list_changed.proto")
+	if err == nil {
+		t.Fatal("want error, got nil")
+	}
+	for _, want := range []string{
+		"at most one resource_list_changed",
+		"already registered",
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error missing %q\nerror: %v", want, err)
+		}
+	}
+}
+
+// TestGenerate_BadElicitNoTool asserts the generator hard-errors on a
+// method annotated with protomcp.v1.elicitation but no protomcp.v1.tool ,
+// elicitation is a modifier and has nothing to gate on its own.
+func TestGenerate_BadElicitNoTool(t *testing.T) {
+	err := runGenerateExpectError(t, "bad_elicit_no_tool.proto")
+	want := "BadElicitNoTool.Act: protomcp.v1.elicitation requires a protomcp.v1.tool"
+	if err == nil || !strings.Contains(err.Error(), want) {
+		t.Fatalf("want error containing %q, got %v", want, err)
+	}
+}
+
+// TestGenerate_BadElicitSection asserts the generator hard-errors on an
+// elicitation message that uses Mustache section syntax. Our contract is
+// logic-less rendering, sections would require runtime condition
+// evaluation over the proto request and we do not support that.
+func TestGenerate_BadElicitSection(t *testing.T) {
+	err := runGenerateExpectError(t, "bad_elicit_section.proto")
+	// Error wording comes from schema.ParseMustache; assert on the stable part.
+	want := "sections"
 	if err == nil || !strings.Contains(err.Error(), want) {
 		t.Fatalf("want error containing %q, got %v", want, err)
 	}
@@ -97,14 +195,14 @@ func TestGenerate_OptionsVariety(t *testing.T) {
 		{"prefix + synthesized name (NoHints)", true, `"ns_Prefixed_NoHints"`},
 
 		// Explicit name override is used verbatim on top of the prefix. Per
-		// the generator, an explicit override is NOT sanitized — the user's
+		// the generator, an explicit override is NOT sanitized, the user's
 		// string is preserved so dots/slashes survive.
 		{"prefix + override preserved verbatim", true, `"ns_custom.name.value"`},
 		// The synthesized fallback "ns_Prefixed_Renamed" must NOT appear.
 		{"synthesized name does not leak when override set", false, `"ns_Prefixed_Renamed"`},
 
 		// Hint combinations. Each annotation literal must contain exactly
-		// the flags that were set — and nothing else.
+		// the flags that were set, and nothing else.
 		{"ReadOnlyOnly has ReadOnlyHint",
 			true, "&mcp.ToolAnnotations{ReadOnlyHint: true}"},
 		{"IdempotentOnly has IdempotentHint",
@@ -155,6 +253,58 @@ func TestGenerate_MultiService(t *testing.T) {
 	assertSubstrings(t, out, cases)
 }
 
+// TestGenerate_Prompts covers the prompt annotation codegen path:
+//   - RegisterPromptSvcMCPPrompts register function is emitted
+//   - prompt name, title, description, and arguments appear
+//   - srv.SDK().AddPrompt is the SDK call (not AddTool)
+//   - enum argument completions are registered via
+//     RegisterPromptArgCompletions (enum value names minus _UNSPECIFIED)
+//   - buf.validate.string.in values are registered as completions too
+//   - FinishPromptGet / PromptChain are the runtime hooks
+func TestGenerate_Prompts(t *testing.T) {
+	out := runGenerate(t, "prompts.proto")
+
+	cases := []substringCase{
+		{"prompts register function", true, "RegisterPromptSvcMCPPrompts"},
+		{"review_item prompt name", true, `"review_item"`},
+		{"prompt title emitted", true, `"Review an item"`},
+		{"prompt description emitted", true, `"Ask the LLM to review a single item."`},
+		{"prompt required arg", true, `Required: true`},
+		{"SDK AddPrompt", true, "srv.SDK().AddPrompt"},
+		{"no AddTool for prompt-only svc", false, "srv.SDK().AddTool"},
+		{"prompt final handler uses PromptChain", true, "srv.PromptChain(final)"},
+		{"prompt handler uses FinishPromptGet", true, "srv.FinishPromptGet"},
+		{"mustache render call", true, "mustache.Render"},
+		{"enum completions registered", true, `RegisterPromptArgCompletions("review_item", "priority"`},
+		{"enum value names", true, `"PRIORITY_LOW"`},
+		{"unspecified excluded", false, `"PRIORITY_UNSPECIFIED"`},
+		{"string.in completions registered", true, `RegisterPromptArgCompletions("PromptSvc_CategorySelect", "category"`},
+		{"string.in values", true, `"alpha"`},
+	}
+	assertSubstrings(t, out, cases)
+}
+
+// TestGenerate_BadPromptStreams_Errors asserts the generator returns a
+// clear error when a streaming RPC is annotated with protomcp.v1.prompt.
+func TestGenerate_BadPromptStreams_Errors(t *testing.T) {
+	err := runGenerateExpectError(t, "bad_prompt_streams.proto")
+	want := "BadPromptStream.Watch: server-streaming RPCs cannot be exposed as MCP prompts"
+	if err == nil || !strings.Contains(err.Error(), want) {
+		t.Fatalf("want error containing %q, got %v", want, err)
+	}
+}
+
+// TestGenerate_BadPromptTemplate_Errors asserts that Mustache section
+// syntax (and by extension inverted-section + partial syntax) fails
+// codegen with an actionable error.
+func TestGenerate_BadPromptTemplate_Errors(t *testing.T) {
+	err := runGenerateExpectError(t, "bad_prompt_template.proto")
+	want := "sections ({{#items}}) are not supported"
+	if err == nil || !strings.Contains(err.Error(), want) {
+		t.Fatalf("want error containing %q, got %v", want, err)
+	}
+}
+
 // TestGenerate_NoTools asserts that a proto with no annotated methods
 // produces no generated file at all.
 func TestGenerate_NoTools(t *testing.T) {
@@ -179,7 +329,7 @@ func TestGenerate_NoTools(t *testing.T) {
 // TestSanitizeToolName covers the tool-name sanitizer directly. Proto
 // service names are constrained to identifier characters, so dots and
 // slashes can only leak into a synthesized tool name via a malformed or
-// hand-crafted descriptor — but the sanitizer is defensive code the rest
+// hand-crafted descriptor, but the sanitizer is defensive code the rest
 // of the generator relies on, so we verify it behaves as advertised.
 func TestSanitizeToolName(t *testing.T) {
 	cases := []struct {
@@ -195,9 +345,9 @@ func TestSanitizeToolName(t *testing.T) {
 		{strings.Repeat("x", 129), true},
 	}
 	for _, tc := range cases {
-		err := validateToolName(tc.in)
+		err := validateMCPIdentifier(tc.in)
 		if (err != nil) != tc.wantErr {
-			t.Errorf("validateToolName(%q) = %v, wantErr=%v", tc.in, err, tc.wantErr)
+			t.Errorf("validateMCPIdentifier(%q) = %v, wantErr=%v", tc.in, err, tc.wantErr)
 		}
 	}
 }
@@ -257,7 +407,7 @@ func runGenerateExpectError(t *testing.T, protoName string) error {
 		return genErr
 	}
 	// If Generate returned nil, the plugin may have surfaced the error via
-	// its Response().Error field instead — check there too.
+	// its Response().Error field instead, check there too.
 	if resp := plugin.Response(); resp.Error != nil {
 		return fmt.Errorf("%s", *resp.Error)
 	}

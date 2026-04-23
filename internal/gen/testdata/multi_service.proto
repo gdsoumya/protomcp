@@ -18,7 +18,7 @@ service Alpha {
 
 // Beta is the second service. It also contains an unannotated bidi-streaming
 // RPC which the generator silently ignores. (Annotated bidi-streaming is a
-// hard error — see bad_bidi.proto.)
+// hard error, see bad_bidi.proto.)
 service Beta {
   // Echo is a unary annotated method.
   rpc Echo(Msg) returns (Msg) {

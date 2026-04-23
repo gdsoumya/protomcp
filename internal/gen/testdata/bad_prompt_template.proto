@@ -1,0 +1,21 @@
+syntax = "proto3";
+
+// bad_prompt_template.proto exercises the Mustache template rejection
+// path. Section syntax is disallowed; codegen must fail with an
+// actionable error.
+package protomcp.gen.testdata.badprompttemplate.v1;
+
+import "protomcp/v1/annotations.proto";
+
+option go_package = "github.com/gdsoumya/protomcp/internal/gen/testdata/badprompttemplate;badprompttemplatev1";
+
+service BadPromptTemplate {
+  rpc Bad(BadRequest) returns (BadReply) {
+    option (protomcp.v1.prompt) = {
+      template: "hello {{#items}}{{.}}{{/items}}"
+    };
+  }
+}
+
+message BadRequest {}
+message BadReply {}

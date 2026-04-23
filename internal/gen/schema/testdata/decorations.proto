@@ -29,3 +29,72 @@ message Documented {
 message ContactInfo {
   string phone = 1;
 }
+
+// Examples exercises `@example` marker extraction on field-level comments.
+// Mixed types (string / integer / boolean / object) must all round-trip
+// intact as native JSON values inside the emitted `examples` array.
+message Examples {
+  // Human-readable task title.
+  // @example "Buy milk"
+  // @example "Finish Q2 report"
+  string title = 1;
+
+  // How many people to assign.
+  // @example 3
+  int32 assignees = 2;
+
+  // Whether the task is urgent.
+  // @example true
+  bool urgent = 3;
+
+  // Arbitrary payload attached to the task.
+  // @example {"key":"value","n":1}
+  string payload = 4;
+
+  // A field with no examples at all. Its description should pass through
+  // but the schema must NOT carry an `examples` key.
+  string plain = 5;
+}
+
+// Task progress state.
+enum TaskStatus {
+  TASK_STATUS_UNSPECIFIED = 0;
+  // Task has not been started.
+  PENDING = 1;
+  // Work is in progress.
+  IN_PROGRESS = 2;
+  // Task is complete.
+  COMPLETED = 3;
+}
+
+// Priority has no top-level leading comment. Some values carry per-value
+// comments and some don't; the emitted `enumDescriptions` array must
+// preserve position alignment by filling gaps with empty strings.
+enum Priority {
+  PRIORITY_UNSPECIFIED = 0;
+  LOW = 1;
+  // High-priority items are surfaced above everything else.
+  HIGH = 2;
+}
+
+// Flavor has no leading comment on the type and none on any value, so the
+// schema must omit `enumDescriptions` entirely.
+enum Flavor {
+  FLAVOR_UNSPECIFIED = 0;
+  SWEET = 1;
+  SALTY = 2;
+}
+
+// EnumDecorations exercises enum-value descriptions and the fallback from
+// an enum type's leading comment to an uncommented field.
+message EnumDecorations {
+  // Field with its own leading comment: description must use this, NOT the
+  // enum type's leading comment.
+  TaskStatus status_with_field_comment = 1;
+
+  TaskStatus status = 2;
+
+  Priority priority = 3;
+
+  Flavor flavor = 4;
+}

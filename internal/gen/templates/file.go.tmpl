@@ -6,7 +6,11 @@ package {{.PackageName}}
 {{range .SchemaVars -}}
 var {{.Name}} = {{$.ProtomcpPkg}}.MustParseSchema({{.JSON}})
 {{end}}
+{{range .URITemplateVars -}}
+var {{.Name}} = {{$.URITemplatePkg}}.MustNew({{printf "%q" .Raw}})
+{{end}}
 {{range .PerService}}
+{{- if .Tools}}
 {{- if .ServiceComment}}{{commentBlock .ServiceComment}}
 //
 {{end -}}
@@ -18,3 +22,64 @@ func {{.RegisterFuncName}}(srv *{{$.ProtomcpPkg}}.Server, client {{.ClientTypeRe
 {{- end}}
 }
 {{end}}
+{{- if .HasResources}}
+{{- if .ServiceComment}}{{commentBlock .ServiceComment}}
+//
+{{end -}}
+// {{.RegisterResourcesFuncName}} wires every resource-annotated RPC on
+// the service into srv. Subscriptions are NOT codegen'd; wire them via
+// mcp.ServerOptions.SubscribeHandler / UnsubscribeHandler through
+// protomcp.WithSDKOptions.
+func {{.RegisterResourcesFuncName}}(srv *{{$.ProtomcpPkg}}.Server, client {{.ClientTypeRef}}) {
+{{- range .ResourceReads}}
+{{template "resource_read.go.tmpl" (withFile . $)}}
+{{- end}}
+{{- range .ResourceLists}}
+{{template "resource_list.go.tmpl" (withFile . $)}}
+{{- end}}
+}
+{{end}}
+{{- if .Prompts}}
+{{- if .ServiceComment}}{{commentBlock .ServiceComment}}
+//
+{{end -}}
+// {{.PromptsRegisterFuncName}} registers every annotated RPC on the service
+// as an MCP prompt on srv, dispatching to the supplied gRPC client. For
+// prompts whose arguments have compile-time-known value sets (enum values,
+// buf.validate.string.in), a completion/complete handler is also wired up.
+func {{.PromptsRegisterFuncName}}(srv *{{$.ProtomcpPkg}}.Server, client {{.ClientTypeRef}}) {
+{{- range .Prompts}}
+{{template "prompt.go.tmpl" .}}
+{{- end}}
+}
+{{end}}
+{{- if .ResourceListChangedWatchers}}
+{{- if .ServiceComment}}{{commentBlock .ServiceComment}}
+//
+{{end -}}
+// {{.StartListChangedWatchersFuncName}} starts one goroutine per
+// protomcp.v1.resource_list_changed annotation. Each opens the
+// annotated server-streaming RPC and fires
+// srv.NotifyResourceListChanged() on every received event. Streams
+// reconnect with exponential backoff; watchers exit when ctx is
+// canceled. Call AFTER {{.RegisterResourcesFuncName}}.
+func {{.StartListChangedWatchersFuncName}}(ctx {{$.QContext}}, srv *{{$.ProtomcpPkg}}.Server, client {{.ClientTypeRef}}) {
+{{- range .ResourceListChangedWatchers}}
+	go {{$.ProtomcpPkg}}.RetryLoop(ctx, func(ctx {{$.QContext}}, reset func()) error {
+		// Messages on {{.RPCName}} are bare triggers; content ignored.
+		stream, err := {{.ClientMethod}}(ctx, &{{.RequestTypeRef}}{})
+		if err != nil {
+			return err
+		}
+		for {
+			if _, rerr := stream.Recv(); rerr != nil {
+				return rerr
+			}
+			reset()
+			srv.NotifyResourceListChanged()
+		}
+	})
+{{- end}}
+}
+{{end}}
+{{- end}}

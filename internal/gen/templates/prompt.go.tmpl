@@ -1,0 +1,95 @@
+{{define "prompt.go.tmpl"}}
+	srv.SDK().AddPrompt(&{{.QMCPPrompt}}{
+		Name: {{printf "%q" .PromptName}},
+{{- if .Title}}
+		Title: {{printf "%q" .Title}},
+{{- end}}
+{{- if .Description}}
+		Description: {{printf "%q" .Description}},
+{{- end}}
+{{- if .Arguments}}
+		Arguments: []*{{.QMCPPromptArg}}{
+{{- range .Arguments}}
+			{
+				Name: {{printf "%q" .Name}},
+{{- if .Description}}
+				Description: {{printf "%q" .Description}},
+{{- end}}
+{{- if .Required}}
+				Required: true,
+{{- end}}
+			},
+{{- end}}
+		},
+{{- end}}
+	}, func(ctx {{.QContext}}, req *{{.QMCPGetReq}}) (*{{.QMCPGetResult}}, error) {
+		// Arguments is map[string]string per MCP spec; required-arg
+		// validation happens in the SDK against Prompt.Arguments above.
+		in := &{{.InputTypeRef}}{}
+		args := map[string]string{}
+		if req != nil && req.Params != nil {
+			args = req.Params.Arguments
+		}
+{{range .Arguments}}
+{{- if .IsString}}
+		if v, ok := args[{{printf "%q" .Name}}]; ok {
+			in.{{.FieldName}} = v
+		}
+{{- else if .IsEnum}}
+		if v, ok := args[{{printf "%q" .Name}}]; ok {
+			if n, found := {{.EnumMapIdent}}[v]; found {
+				in.{{.FieldName}} = {{.EnumTypeRef}}(n)
+			} else {
+				return srv.FinishPromptGet(ctx, req, nil, nil, {{$.QFmtErrorf}}("invalid value %q for prompt argument %q", v, {{printf "%q" .Name}}))
+			}
+		}
+{{- end}}
+{{- end}}
+		g := &{{.QProtomcpGRPCReq}}{Input: in, Metadata: {{.QMetadataMD}}{}}
+		final := func(ctx {{.QContext}}, req *{{.QMCPGetReq}}, g *{{.QProtomcpGRPCReq}}) (*{{.QMCPGetResult}}, error) {
+			ctx = {{.QMetadataNewOut}}(ctx, g.Metadata)
+			upstream, ok := g.Input.(*{{.InputTypeRef}})
+			if !ok {
+				return nil, {{.QFmtErrorf}}("GRPCData.Input: want *%s, got %T", "{{.InputTypeRef}}", g.Input)
+			}
+			resp, err := {{.ClientMethod}}(ctx, upstream)
+			if err != nil {
+				return nil, err
+			}
+			g.Output = resp
+			// The Server's protojson.MarshalOptions (default
+			// EmitDefaultValues=true) controls how zero-valued
+			// scalars appear in the template context; see
+			// WithProtoJSONMarshal.
+			payload, mErr := srv.MarshalProto(resp)
+			if mErr != nil {
+				return nil, mErr
+			}
+			var ctxMap map[string]any
+			if uErr := {{.QJSONUnmarshal}}(payload, &ctxMap); uErr != nil {
+				return nil, uErr
+			}
+			rendered, rErr := {{.QMustacheRender}}({{.TemplateLiteral}}, ctxMap)
+			if rErr != nil {
+				return nil, {{.QFmtErrorf}}("render prompt template: %w", rErr)
+			}
+			return &{{.QMCPGetResult}}{
+				Description: {{printf "%q" .Description}},
+				Messages: []*{{.QMCPPromptMsg}}{
+					{Role: "user", Content: &{{.QMCPTextContent}}{Text: rendered}},
+				},
+			}, nil
+		}
+		result, err := srv.PromptChain(final)(ctx, req, g)
+		return srv.FinishPromptGet(ctx, req, g, result, err)
+	})
+{{range .Arguments}}
+{{- if .CompletionValues}}
+	srv.RegisterPromptArgCompletions({{printf "%q" $.PromptName}}, {{printf "%q" .Name}}, []string{
+{{- range .CompletionValues}}
+		{{printf "%q" .}},
+{{- end}}
+	})
+{{- end}}
+{{- end}}
+{{end}}

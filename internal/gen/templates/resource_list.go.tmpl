@@ -1,0 +1,60 @@
+{{define "resource_list.go.tmpl"}}
+{{- with .R}}
+	{
+		list := func(ctx {{$.F.QContext}}, req *{{$.F.MCPPkg}}.ListResourcesRequest, g *{{$.F.ProtomcpPkg}}.GRPCData) (*{{$.F.MCPPkg}}.ListResourcesResult, error) {
+			upstream, ok := g.Input.(*{{.InputTypeRef}})
+			if !ok {
+				return nil, {{$.F.QFmtErrorf}}("protomcp: GRPCData.Input: want *%s, got %T", "{{.InputTypeRef}}", g.Input)
+			}
+			resp, err := {{.ClientMethod}}(ctx, upstream)
+			if err != nil {
+				return nil, err
+			}
+			g.Output = resp
+			items := {{.ItemFieldGetter}}
+			out := &{{$.F.MCPPkg}}.ListResourcesResult{Resources: make([]*{{$.F.MCPPkg}}.Resource, 0, len(items))}
+			for _, item := range items {
+				_ = item
+				values := {{$.F.URITemplatePkg}}.Values{}
+				{{- range .ItemBindings}}
+				values[{{printf "%q" .Placeholder}}] = {{$.F.URITemplatePkg}}.String({{.FieldGetter}})
+				{{- end}}
+				uri, expandErr := {{.URITemplateVar}}.Expand(values)
+				if expandErr != nil {
+					return nil, expandErr
+				}
+				// Mustache resolves variables by protojson camelCase
+				// names for consistency with tool / resource surfaces.
+				itemJSON, iErr := srv.MarshalProto(item)
+				if iErr != nil {
+					return nil, {{$.F.QFmtErrorf}}("protomcp: marshal item for %q: %w", uri, iErr)
+				}
+				var itemMap map[string]any
+				if jErr := {{$.F.JSONUnmarshal}}(itemJSON, &itemMap); jErr != nil {
+					return nil, {{$.F.QFmtErrorf}}("protomcp: unmarshal item for %q: %w", uri, jErr)
+				}
+				nameText, rErr := {{$.F.MustachePkg}}.Render({{safeRawString .Name}}, itemMap)
+				if rErr != nil {
+					return nil, {{$.F.QFmtErrorf}}("protomcp: render name_field for %q: %w", uri, rErr)
+				}
+				r := &{{$.F.MCPPkg}}.Resource{URI: uri, Name: nameText, MIMEType: {{printf "%q" .MIMEType}}}
+				{{- if .Description}}
+				descText, dErr := {{$.F.MustachePkg}}.Render({{safeRawString .Description}}, itemMap)
+				if dErr != nil {
+					return nil, {{$.F.QFmtErrorf}}("protomcp: render description_field for %q: %w", uri, dErr)
+				}
+				r.Description = descText
+				{{- end}}
+				out.Resources = append(out.Resources, r)
+			}
+			return out, nil
+		}
+		srv.RegisterResourceLister(func(ctx {{$.F.QContext}}, req *{{$.F.MCPPkg}}.ListResourcesRequest) (*{{$.F.MCPPkg}}.ListResourcesResult, error) {
+			in := &{{.InputTypeRef}}{}
+			g := &{{$.F.ProtomcpPkg}}.GRPCData{Input: in, Metadata: {{$.F.QMetadataMD}}{}}
+			result, err := srv.ResourceListChain(list)(ctx, req, g)
+			return srv.FinishResourceList(ctx, req, g, result, err)
+		})
+	}
+{{- end}}
+{{end}}

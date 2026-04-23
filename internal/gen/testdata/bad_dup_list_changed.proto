@@ -1,0 +1,26 @@
+syntax = "proto3";
+
+// bad_dup_list_changed.proto exercises the generator's at-most-one
+// constraint for protomcp.v1.resource_list_changed. Two annotations
+//, even on different services, must fail with a clear error.
+package protomcp.gen.testdata.baddupchanged.v1;
+
+import "protomcp/v1/annotations.proto";
+
+option go_package = "github.com/gdsoumya/protomcp/internal/gen/testdata/baddupchanged;baddupchangedv1";
+
+service FeedA {
+  rpc WatchA(WatchRequest) returns (stream Event) {
+    option (protomcp.v1.resource_list_changed) = {};
+  }
+}
+
+// Second annotation in the same run, must trip the codegen check.
+service FeedB {
+  rpc WatchB(WatchRequest) returns (stream Event) {
+    option (protomcp.v1.resource_list_changed) = {};
+  }
+}
+
+message WatchRequest {}
+message Event {}

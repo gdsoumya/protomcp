@@ -1,0 +1,29 @@
+syntax = "proto3";
+
+// bad_elicit_no_tool.proto exercises the generator's hard-error path for
+// an elicitation annotation without a matching tool annotation. Elicitation
+// is a modifier, it gates a tool call on a user prompt, so it cannot
+// appear in isolation; the generator must reject it loudly rather than
+// silently drop the option.
+//
+// Go types for this proto are intentionally NOT committed, tests drive
+// the generator directly against the FileDescriptorSet and assert failure,
+// so there's nothing to import at test time.
+package protomcp.gen.testdata.badelicitnotool.v1;
+
+import "protomcp/v1/annotations.proto";
+
+option go_package = "github.com/gdsoumya/protomcp/internal/gen/testdata/badelicitnotool;badelicitnotoolv1";
+
+service BadElicitNoTool {
+  rpc Act(ActRequest) returns (ActReply) {
+    option (protomcp.v1.elicitation) = { message: "Proceed?" };
+  }
+}
+
+message ActRequest {
+  string id = 1;
+}
+message ActReply {
+  bool ok = 1;
+}

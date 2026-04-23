@@ -1,0 +1,32 @@
+syntax = "proto3";
+
+// bad_elicit_section.proto exercises the generator's Mustache-validation
+// path. Confirmation messages are rendered at codegen time against the
+// request message; section syntax ({{#field}}...{{/field}}) is not
+// supported, so the generator must reject it.
+//
+// Go types for this proto are intentionally NOT committed, tests drive
+// the generator directly against the FileDescriptorSet and assert failure,
+// so there's nothing to import at test time.
+package protomcp.gen.testdata.badelicitsection.v1;
+
+import "protomcp/v1/annotations.proto";
+
+option go_package = "github.com/gdsoumya/protomcp/internal/gen/testdata/badelicitsection;badelicitsectionv1";
+
+service BadElicitSection {
+  rpc Act(ActRequest) returns (ActReply) {
+    option (protomcp.v1.tool)        = { title: "Act" };
+    option (protomcp.v1.elicitation) = {
+      message: "Proceed? {{#confirm}}...{{/confirm}}"
+    };
+  }
+}
+
+message ActRequest {
+  string id = 1;
+  bool confirm = 2;
+}
+message ActReply {
+  bool ok = 1;
+}

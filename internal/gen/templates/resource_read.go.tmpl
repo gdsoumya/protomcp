@@ -1,0 +1,55 @@
+{{define "resource_read.go.tmpl"}}
+{{- with .R}}
+	srv.SDK().AddResourceTemplate(&{{$.F.MCPPkg}}.ResourceTemplate{
+		URITemplate: {{printf "%q" .URITemplate}},
+		Name: {{printf "%q" .UniqueName}},
+		MIMEType: {{printf "%q" .MIMEType}},
+	}, func(ctx {{$.F.QContext}}, req *{{$.F.MCPPkg}}.ReadResourceRequest) (*{{$.F.MCPPkg}}.ReadResourceResult, error) {
+		// A miss here means the SDK and our URI-template regexps
+		// disagree, which is a bug.
+		match := {{.URITemplateVar}}.Match(req.Params.URI)
+		if match == nil {
+			return nil, {{$.F.QFmtErrorf}}("protomcp: URI %q does not match template %q", req.Params.URI, {{printf "%q" .URITemplate}})
+		}
+		in := &{{.InputTypeRef}}{}
+		{{- range .Bindings}}
+		{
+			val := match.Get({{printf "%q" .Placeholder}}).String()
+			{{.FieldAssign}}
+		}
+		{{- end}}
+		g := &{{$.F.ProtomcpPkg}}.GRPCData{Input: in, Metadata: nil}
+		final := func(ctx {{$.F.QContext}}, req *{{$.F.MCPPkg}}.ReadResourceRequest, g *{{$.F.ProtomcpPkg}}.GRPCData) (*{{$.F.MCPPkg}}.ReadResourceResult, error) {
+			upstream, ok := g.Input.(*{{.InputTypeRef}})
+			if !ok {
+				return nil, {{$.F.QFmtErrorf}}("protomcp: GRPCData.Input: want *%s, got %T", "{{.InputTypeRef}}", g.Input)
+			}
+			resp, err := {{.ClientMethod}}(ctx, upstream)
+			if err != nil {
+				return nil, err
+			}
+			g.Output = resp
+			contents := &{{$.F.MCPPkg}}.ResourceContents{
+				URI: req.Params.URI,
+				MIMEType: {{printf "%q" .MIMEType}},
+			}
+		{{- if .BlobFieldGetter}}
+			Out := resp
+			_ = Out
+			contents.Blob = {{.BlobFieldGetter}}
+		{{- else}}
+			payload, mErr := srv.MarshalProto(resp)
+			if mErr != nil {
+				return nil, mErr
+			}
+			contents.Text = string(payload)
+		{{- end}}
+			return &{{$.F.MCPPkg}}.ReadResourceResult{
+				Contents: []*{{$.F.MCPPkg}}.ResourceContents{contents},
+			}, nil
+		}
+		result, err := srv.ResourceReadChain(final)(ctx, req, g)
+		return srv.FinishResourceRead(ctx, req, g, result, err)
+	})
+{{- end}}
+{{end}}

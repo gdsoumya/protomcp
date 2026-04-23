@@ -119,7 +119,7 @@ func TestEnumConstraints(t *testing.T) {
 	schema := jsonRound(t, ForInput(md, Options{}))
 
 	// defined_only + UNSPECIFIED still allowed (we don't auto-exclude UNSPECIFIED).
-	// Nothing to compare strictly — just ensure the enum was preserved.
+	// Nothing to compare strictly, just ensure the enum was preserved.
 	if _, ok := get(t, schema, "properties", "definedOnly").(map[string]any)["enum"]; !ok {
 		t.Error("defined_only: expected enum values")
 	}

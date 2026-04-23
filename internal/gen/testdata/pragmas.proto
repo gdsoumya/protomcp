@@ -1,0 +1,36 @@
+syntax = "proto3";
+
+package protomcp.gen.testdata.pragmas.v1;
+
+import "protomcp/v1/annotations.proto";
+
+option go_package = "github.com/gdsoumya/protomcp/internal/gen/testdata/pragmas;pragmasv1";
+
+// Pragmas is a small fixture that exercises two comment-processing paths
+// in the generator at the same time: backticks embedded in proto comments
+// and whole-line pragma stripping. It is intentionally minimal so the
+// assertions stay readable.
+service Pragmas {
+  // RunTask is the canonical pragma fixture. Use `grpcurl` to test.
+  // buf:lint:ignore FIELD_LOWER_SNAKE_CASE
+  // @ignore-comment internal note: should not leak.
+  // Used across the API for demoing pragma stripping.
+  rpc RunTask(RunTaskRequest) returns (RunTaskReply) {
+    option (protomcp.v1.tool) = {
+      read_only: true
+    };
+  }
+}
+
+// RunTaskRequest is the canonical task resource.
+// buf:lint:ignore FIELD_LOWER_SNAKE_CASE
+// Used across the API.
+message RunTaskRequest {
+  // The task id to run. Use `grpcurl` to test.
+  // buf:lint:ignore FIELD_LOWER_SNAKE_CASE
+  string id = 1;
+}
+
+message RunTaskReply {
+  string status = 1;
+}
